@@ -66,6 +66,8 @@ Ablauf
      - Datumswerte sind echte Excel-Datumswerte (TT.MM.JJJJ, mit Uhrzeit nur wenn vorhanden).
        Datumswerte vor 1900 kann Excel nicht darstellen; sie stehen als Text in der Zelle.
      - Steuerzeichen, die Excel nicht speichern kann, werden aus Texten entfernt.
+     - Texte werden immer als Text gespeichert; ein Wert wie "=SUMME(...)" wird nicht als Formel
+       ausgeführt (Schutz vor Formel-Injection).
      - Erste Zeile fixiert, Autofilter auf allen Spalten.
    Ein weiteres Blatt lässt sich ergänzen, indem man ein Paar (Blattname, Tabellenname) in SHEETS
    einträgt; die Aufbereitung geschieht automatisch anhand der Fremdschlüssel.
@@ -245,6 +247,8 @@ def cell(ws, v, bold=False):
     elif isinstance(v, dt.datetime) and v.year < 1900:
         v = v.isoformat(" ")
     c = WriteOnlyCell(ws, v)
+    if isinstance(v, str):
+        c.data_type = "s"  # never let a text starting with "=" become a formula
     if isinstance(v, dt.datetime):
         c.number_format = "DD.MM.YYYY" if v.time() == dt.time() else "DD.MM.YYYY HH:MM:SS"
     if bold:
