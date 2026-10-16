@@ -1,0 +1,8 @@
+# Python-Umgebung, wird von export_fw.sh angelegt
+.venv/
+__pycache__/
+# Sicherungen und Exporte enthalten personenbezogene Daten
+*.bak
+*.sqlite
+*.xlsx
+export/
