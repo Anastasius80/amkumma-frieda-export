@@ -1,8 +1,23 @@
-# Python-Umgebung, wird von export_fw.sh angelegt
+# Python-Umgebung, wird von linux/export_fw.sh angelegt
 .venv/
 __pycache__/
-# Sicherungen und Exporte enthalten personenbezogene Daten
+
+# Sicherungen und Exporte enthalten personenbezogene Daten und Bankverbindungen.
+# Sie dürfen NIE ins Repository gelangen – unabhängig von Ordner und Dateiname.
 *.bak
 *.sqlite
+*.sqlite-journal
 *.xlsx
-export/
+*.mdf
+*.ndf
+*.ldf
+*.csv
+*.zip
+*.7z
+
+# Inhalte aller Ordner "backup" und "export" (in jeder Ebene) ausschließen.
+# Nur die Platzhalter in powershell/ bleiben versioniert, damit die Ordner existieren.
+**/backup/*
+**/export/*
+!powershell/backup/.gitkeep
+!powershell/export/.gitkeep

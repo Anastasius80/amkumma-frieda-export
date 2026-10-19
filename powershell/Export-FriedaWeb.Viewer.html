@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<!--
+  FriedaWeb-Archivansicht – Vorlage für Export-FriedaWeb.ps1.
+  Das Skript ersetzt den Platzhalter im Datenblock durch die exportierten Daten (JSON) und speichert
+  die Datei als <backup-name>.html neben Excel-Datei und Dokumentordner. Läuft offline im Browser,
+  ohne Installation, Server oder externe Bibliotheken. Nur Lesen.
+
+  SPDX-License-Identifier: MIT
+  Copyright (c) 2026 Alexander Waller; PowerShell-/HTML-Erweiterung 2026 für den Gemeindeverband IT amKumma.
+-->
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FriedaWeb Archiv</title>
+<style>
+:root {
+  --bg: #f5f6f8; --panel: #ffffff; --text: #1d2330; --muted: #5d6675; --line: #dde1e7;
+  --accent: #1f5fa8; --accent-soft: #e6eef8; --hover: #f0f4fa; --warn: #8a5a00;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #15181d; --panel: #1e2229; --text: #e4e7ec; --muted: #9aa3b2; --line: #343a45;
+          --accent: #79aef0; --accent-soft: #24324a; --hover: #262c36; --warn: #e2b04a; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.45 "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); }
+header { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px;
+         padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
+header .brand { font-weight: 600; font-size: 17px; color: var(--text); text-decoration: none; }
+header .sub { color: var(--muted); font-size: 13px; flex: 1 1 auto; }
+header nav a { margin-left: 14px; color: var(--accent); text-decoration: none; font-weight: 500; }
+header nav a.active { text-decoration: underline; }
+main { padding: 18px 24px 60px; }
+h1 { font-size: 22px; margin: 4px 0 14px; }
+h2 { font-size: 17px; margin: 26px 0 8px; }
+a { color: var(--accent); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 10px 0 24px; }
+.card { display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 26px;
+        text-decoration: none; color: var(--text); transition: border-color .15s; }
+.card:hover { border-color: var(--accent); }
+.card .big { font-size: 20px; font-weight: 600; color: var(--accent); }
+.card .count { color: var(--muted); margin-top: 6px; }
+.search { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px 14px; align-items: end; }
+.search label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 3px; }
+.search .wide { grid-column: 1 / -1; }
+input, select, button { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line);
+                        border-radius: 6px; padding: 7px 9px; }
+input[type=search] { font-size: 16px; padding: 9px 11px; }
+button { cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.check { flex-direction: row !important; align-items: center; gap: 6px !important; font-size: 14px !important; color: var(--text) !important; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0 8px; }
+.toolbar .info { color: var(--muted); flex: 1 1 auto; }
+.tablewrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { position: sticky; top: 0; background: var(--accent-soft); font-weight: 600; white-space: nowrap; cursor: pointer; user-select: none; }
+td { white-space: nowrap; }
+td.long { white-space: normal; min-width: 260px; max-width: 520px; overflow-wrap: anywhere; }
+td.bool { text-align: center; }
+td.bool input { margin: 0; accent-color: var(--accent); pointer-events: none; }
+tr.click { cursor: pointer; }
+tr.click:hover td { background: var(--hover); }
+.fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 0 24px; }
+.field { display: grid; grid-template-columns: 42% 58%; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.field .k { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.field .v { overflow-wrap: anywhere; white-space: pre-wrap; }
+.muted { color: var(--muted); }
+.badge { display: inline-block; padding: 1px 7px; border-radius: 10px; background: var(--accent-soft); font-size: 12px; margin-left: 6px; }
+.copy { margin-left: 6px; padding: 1px 6px; font-size: 12px; }
+.note { color: var(--warn); font-size: 13px; }
+.more { margin: 10px 0; }
+details.sub { margin: 14px 0 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+details.sub > summary { cursor: pointer; padding: 9px 14px; font-weight: 600; list-style-position: inside; }
+details.sub > summary:hover { background: var(--hover); }
+details.sub[open] > summary { border-bottom: 1px solid var(--line); }
+details.sub > div { padding: 10px; }
+.tablelist { columns: 3 260px; margin: 0; padding-left: 18px; }
+.tablelist li { break-inside: avoid; margin: 2px 0; }
+/* ---------- Druck: eigene Druckvorlage (#print), A4 quer ---------- */
+#print { display: none; }
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 12mm 12mm 14mm 12mm;
+    @bottom-right { content: "Seite " counter(page) " / " counter(pages); font: 8pt "Segoe UI", sans-serif; color: #555; }
+  }
+  body { background: #fff; color: #000; }
+  body.has-print > header, body.has-print > main { display: none !important; }
+  body.has-print #print { display: block; }
+  body:not(.has-print) > header, body:not(.has-print) .toolbar, body:not(.has-print) .noprint, body:not(.has-print) .search { display: none !important; }
+  #print { font: 9pt/1.35 "Segoe UI", sans-serif; color: #000; }
+  .p-head { border-bottom: 1.5pt solid #000; padding-bottom: 4pt; margin-bottom: 8pt; }
+  .p-title { font-size: 15pt; font-weight: 600; }
+  .p-meta { color: #444; font-size: 8pt; margin-top: 2pt; }
+  .p-fields { columns: 3; column-gap: 16pt; }
+  .p-rec .p-fields { columns: 4; column-gap: 12pt; }
+  .p-kv { display: flex; gap: 6pt; break-inside: avoid; border-bottom: 0.5pt solid #ccc; padding: 1.5pt 0; }
+  .p-k { flex: 0 0 40%; color: #444; overflow-wrap: anywhere; }
+  .p-v { flex: 1 1 auto; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .p-sec h3 { font-size: 11pt; margin: 12pt 0 4pt; break-after: avoid; }
+  .p-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+  .p-table thead { display: table-header-group; }
+  .p-table th, .p-table td { border: 0.5pt solid #999; padding: 2pt 4pt; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+  .p-table th { background: #eee; }
+  .p-table tr { break-inside: avoid; }
+  .p-rec { break-inside: avoid; border: 0.5pt solid #999; padding: 3pt 5pt; margin-bottom: 4pt; }
+  .p-rec-title { font-weight: 600; margin-bottom: 2pt; }
+  .p-note { color: #444; font-size: 8pt; margin-top: 10pt; }
+}
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="#">FriedaWeb Archiv</a>
+  <span class="sub" id="subtitle"></span>
+  <nav><a href="#grab" data-nav="grab">Gräber</a><a href="#person" data-nav="person">Personen</a><a href="#info" data-nav="info">Info</a></nav>
+</header>
+<main id="app"><p>Daten werden geladen …</p></main>
+<div id="print" aria-hidden="true"></div>
+
+<script>
+const FW = /*__FW_DATA__*/null;
+</script>
+<script>
+(function () {
+  'use strict';
+  const app = document.getElementById('app');
+  if (!FW || !FW.tables) { app.textContent = 'Keine Daten enthalten. Diese Datei ist die Vorlage; die Archivansicht erzeugt Export-FriedaWeb.ps1.'; return; }
+
+  const T = FW.tables, M = FW.meta || {};
+  const PAGE = 200;
+  const MAX_SECTION_ROWS = 500;
+  const collator = new Intl.Collator('de', { numeric: true, sensitivity: 'base' });
+
+  // ---------- Hilfsfunktionen ----------
+  function el(tag, attrs, ...kids) {
+    const e = document.createElement(tag);
+    if (attrs) for (const [k, v] of Object.entries(attrs)) {
+      if (v === null || v === undefined || v === false) continue;
+      if (k === 'on') for (const [ev, fn] of Object.entries(v)) e.addEventListener(ev, fn);
+      else if (k === 'text') e.textContent = v;
+      else e.setAttribute(k, v === true ? '' : v);
+    }
+    for (const kid of kids.flat()) if (kid !== null && kid !== undefined && kid !== false) e.append(kid.nodeType ? kid : String(kid));
+    return e;
+  }
+  const isEmpty = v => v === null || v === undefined || v === '';
+  // Inhalt ersetzen; verschachtelte Listen werden aufgelöst, null/undefined/false ignoriert.
+  function fill(node, ...kids) { node.replaceChildren(...kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false)); }
+  function fmtDate(s) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}):(\d{2}))?$/.exec(s);
+    if (!m) return s;
+    const time = m[4] && !(m[4] === '00' && m[5] === '00' && m[6] === '00') ? ' ' + m[4] + ':' + m[5] : '';
+    return m[3] + '.' + m[2] + '.' + m[1] + time;
+  }
+  function fmt(v, c) {
+    if (isEmpty(v)) return '';
+    if (typeof v === 'object') return 'i' in v ? fmt(v.v) : v.f;   // {v, i}: Klartext mit ID; {f, u}: Dokument
+    if (typeof v === 'boolean') return v ? 'Ja' : 'Nein';
+    if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toLocaleString('de-AT', { maximumFractionDigits: 6 });
+    if (c && c.t === 'd') return fmtDate(v);
+    return String(v);
+  }
+  function absPath(rel) {
+    try { return decodeURIComponent(new URL(rel, location.href).pathname).replace(/^\/([A-Za-z]:)/, '$1').replace(/\//g, '\\'); }
+    catch (e) { return rel; }
+  }
+  function copyText(text, btn) {
+    const done = () => { const old = btn.textContent; btn.textContent = 'kopiert'; setTimeout(() => btn.textContent = old, 1200); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
+    function fallback() { const ta = el('textarea'); ta.value = text; document.body.append(ta); ta.select(); try { document.execCommand('copy'); done(); } finally { ta.remove(); } }
+  }
+  function docLink(v) {
+    const a = el('a', { href: v.u, target: '_blank', rel: 'noopener', title: 'Dokument öffnen', on: { click: e => e.stopPropagation() } }, v.f);
+    const b = el('button', { class: 'copy noprint', title: 'Vollständigen Pfad kopieren (z. B. für den Explorer)',
+      on: { click: e => { e.stopPropagation(); copyText(absPath(v.u), b); } } }, 'Pfad');
+    return el('span', null, a, b);
+  }
+  const link = (href, text) => el('a', { href, on: { click: e => e.stopPropagation() } }, text);
+  // Tabellenzelle: Ja/Nein als (nicht änderbares) Häkchen-Kästchen, lange Texte mit Umbruch, sonst einzeilig.
+  const LONG_TEXT = 60;
+  function cell(content, raw) {
+    if (typeof raw === 'boolean') {
+      return el('td', { class: 'bool', title: raw ? 'Ja' : 'Nein' },
+        el('input', { type: 'checkbox', checked: raw, disabled: true, 'aria-label': raw ? 'Ja' : 'Nein', tabindex: '-1' }));
+    }
+    const text = typeof content === 'string' ? content : (content && content.textContent) || '';
+    return el('td', text.length > LONG_TEXT ? { class: 'long' } : null, content);
+  }
+
+  // ---------- Datenaufbereitung ----------
+  for (const [key, t] of Object.entries(T)) {
+    t.key = key;
+    t.idx = {};
+    t.cols.forEach((c, i) => { if (!c.x && !(c.h in t.idx)) t.idx[c.h] = i; });
+    t.idIdx = t.cols.findIndex(c => c.h === 'ID' && c.r);
+    t.byId = new Map();
+    if (t.idIdx >= 0) for (const r of t.rows) t.byId.set(String(r[t.idIdx]), r);
+  }
+  const rev = {};
+  for (const t of Object.values(T)) t.cols.forEach((c, i) => { if (c.fk && T[c.fk]) (rev[c.fk] = rev[c.fk] || []).push({ t, i }); });
+  function relMap(rel) {
+    if (!rel.map) {
+      rel.map = new Map();
+      for (const r of rel.t.rows) {
+        const v = r[rel.i];
+        if (isEmpty(v)) continue;
+        const k = String(typeof v === 'object' ? v.i : v);
+        let list = rel.map.get(k);
+        if (!list) rel.map.set(k, list = []);
+        list.push(r);
+      }
+    }
+    return rel.map;
+  }
+  const childRows = (parentKey, id) => (rev[parentKey] || []).map(rel => ({ rel, rows: relMap(rel).get(String(id)) || [] })).filter(x => x.rows.length);
+  const val = (t, r, h) => (h in t.idx ? r[t.idx[h]] : null);
+  function rowText(t, r) { let s = ''; for (let i = 0; i < r.length; i++) if (!t.cols[i].x) { const f = fmt(r[i], t.cols[i]); if (f) s += f + ' '; } return s.toLowerCase(); }
+
+  const grabTable = T[M.grabTable] || null;
+  const personTables = (M.personTables || []).map(k => T[k]).filter(Boolean);
+  const documentTables = new Set((M.documentTables || []).filter(k => T[k]));
+  const isPersonTable = t => personTables.includes(t);
+
+  function personName(t, r) {
+    const parts = [val(t, r, 'Nachname'), val(t, r, 'Vorname')].filter(v => !isEmpty(v)).map(String);
+    return parts.length ? parts.join(', ') : t.name + ' ' + (t.idIdx >= 0 ? r[t.idIdx] : '');
+  }
+  function grabName(r) { const g = val(grabTable, r, 'Grab'); return isEmpty(g) ? 'Grab ' + r[grabTable.idIdx] : String(g); }
+  function title(t, r) {
+    if (t === grabTable) return 'Grab ' + grabName(r);
+    if (isPersonTable(t)) return personName(t, r);
+    // Referenzen und weitere Tabellen: erste befüllte Bezeichnungsspalte, sonst Tabellenname und ID
+    for (const h of ['Bezeichnung', 'Firmenname', 'Firma', 'Block', 'Anrede', 'Schluessel']) {
+      const v = val(t, r, h);
+      if (!isEmpty(v) && typeof v !== 'object') return String(v);
+    }
+    return t.name + (t.idIdx >= 0 ? ' ' + r[t.idIdx] : '');
+  }
+  const secondaryTables = new Set(M.secondaryTables || []);
+  const referenceTables = new Set(M.referenceTables || []);
+  const detailHref = (t, r) => '#d/' + encodeURIComponent(t.key) + '/' + encodeURIComponent(r[t.idIdx]);
+
+  const cleanHeader = h => h.replace(/^(tblxx_|tblkett_|loktbl_|tbl_)|_ID$/gi, '');
+  // Grabbezüge eines Datensatzes: direkte Verweise auf das Grab oder über eine Zwischentabelle mit Grabverweis
+  // (z. B. Person -> Grab_Grabstelle -> Grab, Person -> Berechtigung -> Grab).
+  function grabLinks(t, r) {
+    const out = [];
+    if (!grabTable) return out;
+    t.cols.forEach((c, i) => {
+      if (!c.fk || isEmpty(r[i])) return;
+      if (c.fk === grabTable.key) { out.push({ id: String(r[i]), via: cleanHeader(c.h) }); return; }
+      const mid = T[c.fk];
+      if (!mid || mid === grabTable) return;
+      const mr = mid.byId.get(String(r[i]));
+      if (!mr) return;
+      mid.cols.forEach((mc, j) => { if (mc.fk === grabTable.key && !isEmpty(mr[j])) out.push({ id: String(mr[j]), via: mid.name }); });
+    });
+    // Umgekehrte Richtung: Tabellen, die auf diesen Datensatz und auf ein Grab verweisen (z. B. Berechtigung)
+    if (t.idIdx >= 0) for (const rel of rev[t.key] || []) {
+      const gi = rel.t.cols.findIndex(c => c.fk === grabTable.key);
+      if (gi < 0 || rel.t === grabTable) continue;
+      for (const cr of relMap(rel).get(String(r[t.idIdx])) || []) if (!isEmpty(cr[gi])) out.push({ id: String(cr[gi]), via: rel.t.name });
+    }
+    const seen = new Set();
+    return out.filter(x => grabTable.byId.has(x.id) && !seen.has(x.id + '|' + x.via) && seen.add(x.id + '|' + x.via));
+  }
+  // Personen je Grab (über grabLinks), einmalig aufgebaut
+  let personsByGrab = null;
+  function getPersonsByGrab() {
+    if (personsByGrab) return personsByGrab;
+    // je Grab jede Person nur einmal, alle Bezüge zusammengefasst
+    const tmp = new Map();
+    for (const t of personTables) for (const r of t.rows) for (const g of grabLinks(t, r)) {
+      let persons = tmp.get(g.id);
+      if (!persons) tmp.set(g.id, persons = new Map());
+      const key = t.key + '|' + r[t.idIdx];
+      let p = persons.get(key);
+      if (!p) persons.set(key, p = { t, r, vias: new Set() });
+      p.vias.add(g.via);
+    }
+    personsByGrab = new Map();
+    for (const [id, persons] of tmp) personsByGrab.set(id, [...persons.values()].map(p => ({ t: p.t, r: p.r, via: [...p.vias].join(', ') })));
+    return personsByGrab;
+  }
+  // Berechtigte: Eintrag als Berechtigter in einer Berechtigungstabelle (bzw. Tabelle tbl_Berechtigter).
+  // Hinweis: Kategorie_B ist in FriedaWeb bei den Bestatteten gesetzt und kennzeichnet keine Berechtigten.
+  let holderIds = null;
+  function isHolder(t, r) {
+    if (!holderIds) {
+      holderIds = new Map();
+      for (const pt of personTables) {
+        const s = new Set();
+        for (const rel of rev[pt.key] || []) if (/berechtigt/i.test(rel.t.key) && /berechtigter/i.test(rel.t.cols[rel.i].h)) for (const k of relMap(rel).keys()) s.add(k);
+        holderIds.set(pt, s);
+      }
+    }
+    return t.key === 'tbl_Berechtigter' || (t.idIdx >= 0 && holderIds.get(t).has(String(r[t.idIdx])));
+  }
+  const isDead = (t, r) => t.key === 'tbl_Verstorbener' || !isEmpty(val(t, r, 'Sterbedatum'));
+
+  // Suchtext je Grab: eigene Daten plus verknüpfte Personen bzw. Personenbezüge (z. B. Berechtigungen)
+  let grabIndex = null;
+  function buildGrabIndex() {
+    if (grabIndex || !grabTable) return grabIndex;
+    const personKeys = new Set(personTables.map(t => t.key));
+    const rels = (rev[grabTable.key] || []).filter(rel => personKeys.has(rel.t.key) || rel.t.cols.some(c => c.fk && personKeys.has(c.fk)));
+    const docRels = (rev[grabTable.key] || []).filter(rel => documentTables.has(rel.t.key));
+    const byGrab = getPersonsByGrab();
+    grabIndex = grabTable.rows.map(r => {
+      const id = String(r[grabTable.idIdx]);
+      let text = rowText(grabTable, r), docs = 0;
+      for (const rel of rels) for (const cr of relMap(rel).get(id) || []) text += rowText(rel.t, cr);
+      for (const rel of docRels) docs += (relMap(rel).get(id) || []).length;
+      const persons = byGrab.get(id) || [];
+      const deadSet = new Set();
+      for (const p of persons) {
+        text += rowText(p.t, p.r);
+        if (isDead(p.t, p.r)) deadSet.add(p.t.key + '|' + p.r[p.t.idIdx]);
+      }
+      return { r, text, docs, dead: deadSet.size };
+    });
+    return grabIndex;
+  }
+  let personIndex = null;
+  function buildPersonIndex() {
+    if (personIndex) return personIndex;
+    personIndex = [];
+    for (const t of personTables) {
+      for (const r of t.rows) {
+        const death = val(t, r, 'Sterbedatum');
+        const graves = [...new Set(grabLinks(t, r).map(g => grabName(grabTable.byId.get(g.id))))].sort(collator.compare);
+        personIndex.push({ t, r, text: rowText(t, r) + graves.join(' ').toLowerCase(), name: personName(t, r),
+          dead: isDead(t, r), holder: isHolder(t, r), graves: graves.join('; '),
+          death: isEmpty(death) ? '' : String(death).slice(0, 10) });
+      }
+    }
+    return personIndex;
+  }
+  const terms = q => q.toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (text, ts) => ts.every(x => text.includes(x));
+
+  // ---------- Ansichten ----------
+  const state = {
+    grab: { q: '', f: {}, docsOnly: false, sort: null, shown: PAGE },
+    person: { q: '', role: '', from: '', to: '', f: {}, sort: null, shown: PAGE }
+  };
+
+  function setNav(view) {
+    document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === view));
+  }
+
+  function startView() {
+    setNav('');
+    fill(app, 
+      el('h1', null, M.title || 'FriedaWeb Archiv'),
+      el('p', { class: 'muted' }, 'Wählen Sie den Einstieg:'),
+      el('div', { class: 'cards' },
+        grabTable && el('a', { class: 'card', href: '#grab' }, el('div', { class: 'big' }, 'Gräber durchsuchen'),
+          el('div', { class: 'count' }, grabTable.rows.length.toLocaleString('de-AT') + ' Gräber – Suche nach Grabnummer, Reihe, Friedhof oder Namen der Verstorbenen und Berechtigten')),
+        personTables.length > 0 && el('a', { class: 'card', href: '#person' }, el('div', { class: 'big' }, 'Personen durchsuchen'),
+          el('div', { class: 'count' }, personTables.reduce((n, t) => n + t.rows.length, 0).toLocaleString('de-AT') + ' Personen – Suche nach Name, Adresse, Sterbedatum'))),
+      el('p', { class: 'muted' }, 'Quelle: ' + (M.source || '') + ' · erstellt ' + (M.generated ? fmtDate(M.generated) : '')),
+      el('p', { class: 'note' }, 'Enthält personenbezogene Daten und Bankverbindungen – nur für berechtigte Personen.'));
+  }
+
+  function resultTable(columns, items, st, onRow) {
+    // columns: [{h, get(item) -> Wert für Anzeige/Sortierung, node(item)?}]
+    if (st.sort) {
+      const c = columns[st.sort.i];
+      const key = c && (c.key || c.get);
+      if (c) items = items.slice().sort((a, b) => st.sort.dir * collator.compare(String(key(a) ?? ''), String(key(b) ?? '')));
+    }
+    const head = el('tr', null, columns.map((c, i) => el('th', { on: { click: () => { st.sort = st.sort && st.sort.i === i ? { i, dir: -st.sort.dir } : { i, dir: 1 }; st.rerender(); } } },
+      c.h + (st.sort && st.sort.i === i ? (st.sort.dir > 0 ? ' ▲' : ' ▼') : ''))));
+    const body = el('tbody');
+    for (const it of items.slice(0, st.shown)) {
+      body.append(el('tr', { class: 'click', on: { click: () => onRow(it) } }, columns.map(c => cell(c.node ? c.node(it) : fmtCell(c.get(it)), c.raw ? c.raw(it) : undefined))));
+    }
+    return { node: el('div', { class: 'tablewrap' }, el('table', null, el('thead', null, head), body)), items };
+  }
+  const fmtCell = v => (isEmpty(v) ? '' : String(v));
+
+  function downloadCsv(name, columns, items) {
+    const esc = v => { const s = isEmpty(v) ? '' : String(v); return /[";\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const lines = [columns.map(c => esc(c.h)).join(';')].concat(items.map(it => columns.map(c => esc(c.get(it))).join(';')));
+    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const a = el('a', { href: URL.createObjectURL(blob), download: name });
+    document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+
+  function distinct(t, h) {
+    if (!(h in t.idx)) return null;
+    const s = new Set();
+    for (const r of t.rows) { const v = r[t.idx[h]]; if (!isEmpty(v)) s.add(fmt(v, t.cols[t.idx[h]])); }
+    return [...s].sort(collator.compare);
+  }
+
+  function grabView() {
+    setNav('grab');
+    if (!grabTable) { fill(app, el('p', null, 'Keine Gräber vorhanden.')); return; }
+    const st = state.grab;
+    const filterHeads = ['Friedhof', 'Block', 'Reihe', 'Grabart'].filter(h => h in grabTable.idx);
+    const q = el('input', { type: 'search', placeholder: 'Grabnummer, Reihe, Name der Verstorbenen oder Berechtigten …', value: st.q, autofocus: true });
+    const selects = filterHeads.map(h => {
+      const s = el('select', null, el('option', { value: '' }, 'alle'), (distinct(grabTable, h) || []).map(v => el('option', { value: v, selected: st.f[h] === v }, v)));
+      s.addEventListener('change', () => { st.f[h] = s.value; st.shown = PAGE; run(); });
+      return el('label', null, h, s);
+    });
+    const docs = el('input', { type: 'checkbox', checked: st.docsOnly, on: { change: () => { st.docsOnly = docs.checked; st.shown = PAGE; run(); } } });
+    const reset = el('button', { on: { click: () => { state.grab = { q: '', f: {}, docsOnly: false, sort: null, shown: PAGE }; grabView(); } } }, 'Zurücksetzen');
+    const out = el('div');
+    fill(app, el('h1', null, 'Gräber durchsuchen'),
+      el('div', { class: 'panel search' }, el('label', { class: 'wide' }, 'Suche', q), selects,
+        documentTables.size > 0 && el('label', { class: 'check' }, docs, 'nur mit Dokumenten'), reset), out);
+    let timer;
+    q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => { st.q = q.value; st.shown = PAGE; run(); }, 200); });
+    const columns = [
+      { h: 'Grab', get: it => grabName(it.r) },
+      ...filterHeads.filter(h => h !== 'Reihe').map(h => ({ h, get: it => fmt(val(grabTable, it.r, h), grabTable.cols[grabTable.idx[h]]) })),
+      { h: 'Verstorbene', get: it => it.dead || '' },
+      ...(documentTables.size ? [{ h: 'Dokumente', get: it => it.docs || '' }] : [])
+    ];
+    st.rerender = run;
+    function run() {
+      const ts = terms(st.q);
+      let items = buildGrabIndex().filter(it => matches(it.text, ts)
+        && filterHeads.every(h => !st.f[h] || fmt(val(grabTable, it.r, h), grabTable.cols[grabTable.idx[h]]) === st.f[h])
+        && (!st.docsOnly || it.docs > 0));
+      if (!st.sort) items.sort((a, b) => collator.compare(grabName(a.r), grabName(b.r)));
+      const res = resultTable(columns, items, st, it => { location.hash = detailHref(grabTable, it.r); });
+      currentPrint = () => printList('Gräber – Trefferliste', columns, res.items,
+        [st.q && 'Suche „' + st.q + '“', ...filterHeads.filter(h => st.f[h]).map(h => h + ': ' + st.f[h]), st.docsOnly && 'nur mit Dokumenten'].filter(Boolean).join(' · '));
+      fill(out, toolbar(res.items, st, columns, 'Graeber.csv'), res.node, moreButton(res.items, st));
+    }
+    run();
+  }
+
+  function toolbar(items, st, columns, csvName) {
+    return el('div', { class: 'toolbar' },
+      el('span', { class: 'info' }, items.length.toLocaleString('de-AT') + ' Treffer' + (items.length > st.shown ? ', angezeigt ' + st.shown.toLocaleString('de-AT') : '')),
+      el('button', { on: { click: () => downloadCsv(csvName, columns, items) } }, 'Trefferliste als CSV'),
+      el('button', { on: { click: () => window.print() } }, 'Trefferliste drucken'));
+  }
+  function moreButton(items, st) {
+    return items.length > st.shown ? el('div', { class: 'more' }, el('button', { on: { click: () => { st.shown += PAGE * 5; st.rerender(); } } }, 'Weitere anzeigen')) : null;
+  }
+
+  function personView() {
+    setNav('person');
+    if (!personTables.length) { fill(app, el('p', null, 'Keine Personen vorhanden.')); return; }
+    const st = state.person;
+    const index = buildPersonIndex();
+    const hasDeath = personTables.some(t => 'Sterbedatum' in t.idx);
+    const friedhofTable = personTables.find(t => 'Friedhof' in t.idx);
+    const q = el('input', { type: 'search', placeholder: 'Name, Geburtsname, Adresse, Ort …', value: st.q, autofocus: true });
+    const role = el('select', null, [['', 'alle'], ['dead', 'Verstorbene'], ['holder', 'Berechtigte']].map(([v, l]) => el('option', { value: v, selected: st.role === v }, l)));
+    const from = el('input', { type: 'date', value: st.from }), to = el('input', { type: 'date', value: st.to });
+    let friedhof = null;
+    if (friedhofTable) {
+      friedhof = el('select', null, el('option', { value: '' }, 'alle'), (distinct(friedhofTable, 'Friedhof') || []).map(v => el('option', { value: v, selected: st.f.Friedhof === v }, v)));
+    }
+    const reset = el('button', { on: { click: () => { state.person = { q: '', role: '', from: '', to: '', f: {}, sort: null, shown: PAGE }; personView(); } } }, 'Zurücksetzen');
+    const out = el('div');
+    fill(app, el('h1', null, 'Personen durchsuchen'),
+      el('div', { class: 'panel search' }, el('label', { class: 'wide' }, 'Suche', q), el('label', null, 'Rolle', role),
+        hasDeath && el('label', null, 'Sterbedatum von', from), hasDeath && el('label', null, 'Sterbedatum bis', to),
+        friedhof && el('label', null, 'Friedhof', friedhof), reset), out);
+    let timer;
+    q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => { st.q = q.value; st.shown = PAGE; run(); }, 200); });
+    for (const [inp, key] of [[role, 'role'], [from, 'from'], [to, 'to']]) inp.addEventListener('change', () => { st[key] = inp.value; st.shown = PAGE; run(); });
+    if (friedhof) friedhof.addEventListener('change', () => { st.f.Friedhof = friedhof.value; st.shown = PAGE; run(); });
+    const address = it => {
+      const t = it.t, r = it.r;
+      const street = [val(t, r, 'Strasse'), val(t, r, 'HausNr'), val(t, r, 'HausNrZusatz')].filter(v => !isEmpty(v)).join(' ');
+      const city = [val(t, r, 'PLZ'), val(t, r, 'Ort')].filter(v => !isEmpty(v)).join(' ');
+      return [street, city].filter(Boolean).join(', ');
+    };
+    const dateOf = (it, h) => fmt(val(it.t, it.r, h), it.t.cols[it.t.idx[h]]);
+    const columns = [
+      { h: 'Name', get: it => it.name },
+      { h: 'Geburtsdatum', get: it => dateOf(it, 'Geburtsdatum'), key: it => val(it.t, it.r, 'Geburtsdatum') },
+      { h: 'Sterbedatum', get: it => dateOf(it, 'Sterbedatum'), key: it => val(it.t, it.r, 'Sterbedatum') },
+      { h: 'Adresse', get: address },
+      { h: 'Grab', get: it => it.graves || fmt(val(it.t, it.r, 'Grab')) },
+      { h: 'Rolle', get: it => [it.dead ? 'verstorben' : '', it.holder ? 'berechtigt' : ''].filter(Boolean).join(', ') },
+      ...(personTables.length > 1 ? [{ h: 'Quelle', get: it => it.t.name }] : [])
+    ];
+    st.rerender = run;
+    function run() {
+      const ts = terms(st.q);
+      let items = index.filter(it => matches(it.text, ts)
+        && (!st.role || (st.role === 'dead' ? it.dead : it.holder))
+        && (!st.from || (it.death && it.death >= st.from)) && (!st.to || (it.death && it.death <= st.to))
+        && (!st.f.Friedhof || fmt(val(it.t, it.r, 'Friedhof')) === st.f.Friedhof));
+      if (!st.sort) items.sort((a, b) => collator.compare(a.name, b.name));
+      const res = resultTable(columns, items, st, it => { if (it.t.idIdx >= 0) location.hash = detailHref(it.t, it.r); });
+      const roleText = { dead: 'Verstorbene', holder: 'Berechtigte' }[st.role];
+      currentPrint = () => printList('Personen – Trefferliste', columns, res.items,
+        [st.q && 'Suche „' + st.q + '“', roleText, st.from && 'Sterbedatum ab ' + fmtDate(st.from), st.to && 'bis ' + fmtDate(st.to),
+          st.f.Friedhof && 'Friedhof: ' + st.f.Friedhof].filter(Boolean).join(' · '));
+      fill(out, toolbar(res.items, st, columns, 'Personen.csv'), res.node, moreButton(res.items, st));
+    }
+    run();
+  }
+
+  function valueNode(t, c, v) {
+    if (isEmpty(v)) return '';
+    const isRef = typeof v === 'object' && 'i' in v;
+    if (typeof v === 'object' && !isRef) return docLink(v);
+    const key = String(isRef ? v.i : v);
+    if (c.fk && T[c.fk] && T[c.fk].byId.has(key)) {
+      const pt = T[c.fk], pr = pt.byId.get(key);
+      return link(detailHref(pt, pr), isRef ? fmt(v) : title(pt, pr));
+    }
+    return fmt(v, c);
+  }
+
+  function detailView(tableKey, id) {
+    const t = T[tableKey], r = t && t.byId.get(id);
+    setNav(t === grabTable ? 'grab' : isPersonTable(t) ? 'person' : '');
+    if (!r) { fill(app, el('p', null, 'Datensatz nicht gefunden.'), link('#', 'Zur Startseite')); return; }
+    let showEmpty = false;
+    const fieldsBox = el('div', { class: 'panel' });
+    function renderFields() {
+      fill(fieldsBox, el('div', { class: 'fields' }, t.cols.map((c, i) => {
+        if (c.x || (!showEmpty && isEmpty(r[i]))) return null;
+        return el('div', { class: 'field' }, el('div', { class: 'k' }, c.h), el('div', { class: 'v' }, valueNode(t, c, r[i])));
+      })));
+    }
+    renderFields();
+    const toggle = el('button', { on: { click: () => { showEmpty = !showEmpty; toggle.textContent = showEmpty ? 'Leere Felder ausblenden' : 'Leere Felder einblenden'; renderFields(); } } }, 'Leere Felder einblenden');
+    const sections = [];
+    const simpleTable = (heads, rows, rowHref) => el('div', { class: 'tablewrap' }, el('table', null,
+      el('thead', null, el('tr', null, heads.map(h => el('th', null, h)))),
+      el('tbody', null, rows.map(cells => el('tr', { class: 'click', on: { click: () => { location.hash = rowHref(cells); } } },
+        cells.slice(1).map(c => cell(c)))))));
+    if (t === grabTable) {
+      // Personen zum Grab, auch über Zwischentabellen (z. B. Grab_Grabstelle, Berechtigung)
+      const persons = getPersonsByGrab().get(id) || [];
+      if (persons.length) {
+        const sorted = persons.slice().sort((a, b) => collator.compare(personName(a.t, a.r), personName(b.t, b.r)));
+        sections.push(el('h2', null, 'Personen', el('span', { class: 'badge' }, sorted.length)),
+          simpleTable(['Name', 'Rolle', 'Geburtsdatum', 'Sterbedatum', 'Bezug'], sorted.map(p => [detailHref(p.t, p.r),
+            link(detailHref(p.t, p.r), personName(p.t, p.r)),
+            [isDead(p.t, p.r) ? 'verstorben' : '', isHolder(p.t, p.r) ? 'berechtigt' : ''].filter(Boolean).join(', '),
+            fmt(val(p.t, p.r, 'Geburtsdatum'), { t: 'd' }), fmt(val(p.t, p.r, 'Sterbedatum'), { t: 'd' }), p.via]), cells => cells[0]));
+      }
+    }
+    if (isPersonTable(t) && grabTable) {
+      const graves = grabLinks(t, r);
+      if (graves.length) {
+        sections.push(el('h2', null, 'Gräber', el('span', { class: 'badge' }, graves.length)),
+          simpleTable(['Grab', 'Bezug'], graves.map(g => {
+            const gr = grabTable.byId.get(g.id);
+            return [detailHref(grabTable, gr), link(detailHref(grabTable, gr), grabName(gr)), g.via];
+          }), cells => cells[0]));
+      }
+    }
+    // Am Grab sind Personen bereits im Bereich "Personen" zusammengefasst (alle Bezüge) – direkte Verknüpfung nicht doppelt zeigen.
+    const groups = childRows(t.key, id).filter(g => !(t === grabTable && isPersonTable(g.rel.t)));
+    const perTable = {};
+    for (const g of groups) perTable[g.rel.t.key] = (perTable[g.rel.t.key] || 0) + 1;
+    const order = Object.keys(T);
+    groups.sort((a, b) => order.indexOf(a.rel.t.key) - order.indexOf(b.rel.t.key));
+    for (const g of groups) {
+      const ct = g.rel.t, fkCol = ct.cols[g.rel.i];
+      const label = perTable[ct.key] > 1 ? ' (' + fkCol.h.replace(/^(tblxx_|loktbl_|tbl_)|_ID$/gi, '') + ')' : '';
+      const used = ct.cols.map((c, i) => i).filter(i => i !== g.rel.i && !ct.cols[i].x && g.rows.some(cr => !isEmpty(cr[i])));
+      const rows = g.rows.slice().sort((a, b) => ct.idIdx >= 0 ? collator.compare(String(a[ct.idIdx]), String(b[ct.idIdx])) : 0);
+      // Weitere Fachtabellen, Rückverweise von Referenzen und große Mengen eingeklappt; Tabelle erst beim Öffnen aufbauen
+      const collapsed = secondaryTables.has(ct.key) || referenceTables.has(t.key) || referenceTables.has(ct.key) || rows.length > 50;
+      const buildTable = () => {
+        const shown = rows.slice(0, MAX_SECTION_ROWS);
+        return el('div', null,
+          el('div', { class: 'tablewrap' }, el('table', null,
+            el('thead', null, el('tr', null, used.map(i => el('th', null, ct.cols[i].h)))),
+            el('tbody', null, shown.map(cr => el('tr', ct.idIdx >= 0 ? { class: 'click', on: { click: () => { location.hash = detailHref(ct, cr); } } } : null,
+              used.map(i => cell(valueNode(ct, ct.cols[i], cr[i]), cr[i]))))))),
+          rows.length > shown.length && el('p', { class: 'muted' }, 'Angezeigt ' + shown.length.toLocaleString('de-AT') + ' von ' + rows.length.toLocaleString('de-AT') + ' – vollständig im Excel bzw. über die Suche.'));
+      };
+      if (collapsed) {
+        const body = el('div');
+        const box = el('details', { class: 'sub' }, el('summary', null, el('span', { class: 'sub-title' }, ct.name + label), el('span', { class: 'badge' }, rows.length)), body);
+        box.addEventListener('toggle', () => { if (box.open && !body.childElementCount) fill(body, buildTable()); });
+        sections.push(box);
+      }
+      else {
+        sections.push(el('h2', null, ct.name + label, el('span', { class: 'badge' }, rows.length)), buildTable());
+      }
+    }
+    fill(app, 
+      el('div', { class: 'toolbar' }, el('button', { on: { click: () => history.back() } }, '← Zurück'),
+        el('span', { class: 'info' }), toggle, el('button', { on: { click: () => window.print() } }, 'Drucken')),
+      el('h1', null, title(t, r), el('span', { class: 'badge' }, t.name)),
+      fieldsBox, sections.length ? sections : el('p', { class: 'muted' }, 'Keine verknüpften Daten.'));
+    currentPrint = () => printDetail(t, r, id);
+  }
+
+  // Alle Tabellen gruppiert; jeder Eintrag führt zur Liste mit Suche
+  function tableGroups() {
+    const all = Object.values(T);
+    return [
+      ['Hauptbereiche', all.filter(t => !secondaryTables.has(t.key) && !referenceTables.has(t.key))],
+      ['Weitere Fachtabellen', all.filter(t => secondaryTables.has(t.key))],
+      ['Nachschlagetabellen (Referenzen)', all.filter(t => referenceTables.has(t.key))]
+    ].filter(g => g[1].length);
+  }
+  function infoView() {
+    setNav('info');
+    fill(app, el('h1', null, 'Info'),
+      el('div', { class: 'panel fields' }, (M.info || []).map(([k, v]) => el('div', { class: 'field' }, el('div', { class: 'k' }, k), el('div', { class: 'v' }, v)))),
+      el('h2', null, 'Alle Tabellen'),
+      el('p', { class: 'muted' }, 'Jede Tabelle lässt sich als Liste mit Suche öffnen.'),
+      tableGroups().map(([head, list]) => [el('h3', null, head),
+        el('ul', { class: 'tablelist' }, list.map(t => el('li', null, link('#t/' + encodeURIComponent(t.key), t.name), ' ', el('span', { class: 'muted' }, '(' + t.rows.length.toLocaleString('de-AT') + ')'))))]),
+      el('h2', null, 'Hinweise'),
+      el('ul', null,
+        el('li', null, 'Nur Lesen: Änderungen sind nicht möglich. Die Excel-Datei enthält dieselben Bereiche (zusätzlich Verlauf und Ereignisprotokoll); die vollständigen Rohdaten enthält die Original-Sicherung.'),
+        el('li', null, 'Dokumente öffnen sich über den Link; Edge lädt Office-Dokumente dabei in den Download-Ordner. Alternativ mit „Pfad“ den Dateipfad kopieren und im Explorer öffnen.'),
+        el('li', null, 'HTML-Datei und Dokumentordner müssen gemeinsam im selben Ordner liegen.'),
+        el('li', { class: 'note' }, 'Enthält personenbezogene Daten und Bankverbindungen (DSGVO) – Ablage und Weitergabe nur an berechtigte Personen.')));
+  }
+
+  // Liste einer beliebigen Tabelle mit Freitextsuche (für weitere Fachtabellen und Referenzen)
+  const tableStates = {};
+  function tableView(key) {
+    const t = T[key];
+    setNav('info');
+    const st = tableStates[key] || (tableStates[key] = { q: '', sort: null, shown: PAGE });
+    const visible = t.cols.map((c, i) => i).filter(i => !t.cols[i].x && t.rows.some(r => !isEmpty(r[i]))).slice(0, 10);
+    const index = t.rows.map(r => ({ r, text: rowText(t, r) }));
+    const columns = visible.map(i => ({ h: t.cols[i].h, get: it => fmt(it.r[i], t.cols[i]),
+      key: it => (typeof it.r[i] === 'object' && it.r[i] ? fmt(it.r[i]) : it.r[i]), node: it => valueNode(t, t.cols[i], it.r[i]), raw: it => it.r[i] }));
+    const q = el('input', { type: 'search', placeholder: 'In ' + t.name + ' suchen …', value: st.q, autofocus: true });
+    const out = el('div');
+    fill(app, el('div', { class: 'toolbar' }, link('#info', '← Alle Tabellen')),
+      el('h1', null, t.name, el('span', { class: 'badge' }, t.rows.length.toLocaleString('de-AT'))),
+      el('div', { class: 'panel search' }, el('label', { class: 'wide' }, 'Suche', q)), out,
+      visible.length < t.cols.filter(c => !c.x).length && el('p', { class: 'muted' }, 'Liste zeigt die ersten Spalten; alle Felder auf der Detailseite.'));
+    let timer;
+    q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => { st.q = q.value; st.shown = PAGE; run(); }, 200); });
+    st.rerender = run;
+    function run() {
+      const ts = terms(st.q);
+      const items = index.filter(it => matches(it.text, ts));
+      const res = resultTable(columns, items, st, it => { if (t.idIdx >= 0) location.hash = detailHref(t, it.r); });
+      currentPrint = () => printList(t.name, columns, res.items, st.q && 'Suche „' + st.q + '“');
+      fill(out, toolbar(res.items, st, columns, t.name.replace(/[^\wäöüÄÖÜß-]/g, '_') + '.csv'), res.node, moreButton(res.items, st));
+    }
+    run();
+  }
+
+  // ---------- Druckvorlage ----------
+  // Beim Drucken (Knopf oder Strg+P) wird die aktuelle Ansicht als eigene, druckgerechte Seite in #print aufgebaut.
+  const printBox = document.getElementById('print');
+  let currentPrint = null;
+  const MAX_PRINT_TABLE_COLUMNS = 7;
+  function printValue(c, v) {
+    if (isEmpty(v)) return '';
+    if (typeof v === 'boolean') return v ? '☑ Ja' : '☐ Nein';
+    if (typeof v === 'object') return v.f;
+    if (typeof v === 'object' && 'i' in v) return fmt(v);
+    if (c && c.fk && T[c.fk] && T[c.fk].byId.has(String(v))) return title(T[c.fk], T[c.fk].byId.get(String(v)));
+    return fmt(v, c);
+  }
+  const printKv = (k, v) => el('div', { class: 'p-kv' }, el('span', { class: 'p-k' }, k), el('span', { class: 'p-v' }, v));
+  function printHead(text, sub) {
+    return el('div', { class: 'p-head' }, el('div', { class: 'p-title' }, text),
+      el('div', { class: 'p-meta' }, [sub, M.title, 'Quelle ' + (M.source || ''), 'gedruckt ' + new Date().toLocaleString('de-AT')].filter(Boolean).join(' · ')));
+  }
+  function printTable(heads, rows) {
+    return el('table', { class: 'p-table' }, el('thead', null, el('tr', null, heads.map(h => el('th', null, h)))),
+      el('tbody', null, rows.map(cells => el('tr', null, cells.map(c => el('td', null, c))))));
+  }
+  // Verknüpfte Datensätze: schmale Bereiche als Tabelle, breite als Datensatz-Blöcke (nichts wird abgeschnitten)
+  function printRows(t, rows, skipIndex) {
+    const used = t.cols.map((c, i) => i).filter(i => i !== skipIndex && !t.cols[i].x && rows.some(r => !isEmpty(r[i])));
+    if (used.length <= MAX_PRINT_TABLE_COLUMNS) {
+      return printTable(used.map(i => t.cols[i].h), rows.map(r => used.map(i => printValue(t.cols[i], r[i]))));
+    }
+    return el('div', null, rows.map(r => el('div', { class: 'p-rec' },
+      el('div', { class: 'p-rec-title' }, title(t, r)),
+      el('div', { class: 'p-fields' }, used.filter(i => !isEmpty(r[i])).map(i => printKv(t.cols[i].h, printValue(t.cols[i], r[i])))))));
+  }
+  function printDetail(t, r, id) {
+    const parts = [printHead(title(t, r), t.name),
+      el('div', { class: 'p-fields' }, t.cols.map((c, i) => (c.x || isEmpty(r[i]) ? null : printKv(c.h, printValue(c, r[i])))))];
+    const section = (head, content) => parts.push(el('div', { class: 'p-sec' }, el('h3', null, head), content));
+    if (t === grabTable) {
+      const persons = (getPersonsByGrab().get(id) || []).slice().sort((a, b) => collator.compare(personName(a.t, a.r), personName(b.t, b.r)));
+      if (persons.length) section('Personen (' + persons.length + ')', printTable(['Name', 'Rolle', 'Geburtsdatum', 'Sterbedatum', 'Bezug'],
+        persons.map(p => [personName(p.t, p.r), [isDead(p.t, p.r) ? 'verstorben' : '', isHolder(p.t, p.r) ? 'berechtigt' : ''].filter(Boolean).join(', '),
+          fmt(val(p.t, p.r, 'Geburtsdatum'), { t: 'd' }), fmt(val(p.t, p.r, 'Sterbedatum'), { t: 'd' }), p.via])));
+    }
+    if (isPersonTable(t) && grabTable) {
+      const graves = grabLinks(t, r);
+      if (graves.length) section('Gräber (' + graves.length + ')', printTable(['Grab', 'Bezug'], graves.map(g => [grabName(grabTable.byId.get(g.id)), g.via])));
+    }
+    const order = Object.keys(T);
+    const groups = childRows(t.key, id).filter(g => !(t === grabTable && isPersonTable(g.rel.t))).sort((a, b) => order.indexOf(a.rel.t.key) - order.indexOf(b.rel.t.key));
+    const perTable = {};
+    for (const g of groups) perTable[g.rel.t.key] = (perTable[g.rel.t.key] || 0) + 1;
+    for (const g of groups) {
+      const ct = g.rel.t;
+      const label = perTable[ct.key] > 1 ? ' – ' + cleanHeader(ct.cols[g.rel.i].h) : '';
+      const printed = g.rows.slice(0, MAX_SECTION_ROWS);
+      section(ct.name + label + ' (' + (printed.length < g.rows.length ? printed.length + ' von ' : '') + g.rows.length + ')', printRows(ct, printed, g.rel.i));
+    }
+    parts.push(el('div', { class: 'p-note' }, 'Auszug aus dem FriedaWeb-Archiv. Enthält personenbezogene Daten – nur für berechtigte Personen.'));
+    return parts;
+  }
+  function printList(head, columns, items, filterText) {
+    return [printHead(head, items.length.toLocaleString('de-AT') + ' Treffer' + (filterText ? ' · ' + filterText : '')),
+      printTable(columns.map(c => c.h), items.map(it => columns.map(c => fmtCell(c.get(it)))))];
+  }
+  window.addEventListener('beforeprint', () => {
+    const content = currentPrint ? currentPrint() : null;
+    document.body.classList.toggle('has-print', !!content);
+    fill(printBox, content);
+  });
+  window.addEventListener('afterprint', () => { document.body.classList.remove('has-print'); fill(printBox); });
+
+  function route() {
+    currentPrint = null;
+    const parts = location.hash.replace(/^#/, '').split('/').map(decodeURIComponent);
+    if (parts[0] === 'grab') grabView();
+    else if (parts[0] === 'person') personView();
+    else if (parts[0] === 'd' && T[parts[1]]) detailView(parts[1], parts[2]);
+    else if (parts[0] === 't' && T[parts[1]]) tableView(parts[1]);
+    else if (parts[0] === 'info') infoView();
+    else startView();
+    window.scrollTo(0, 0);
+  }
+  document.getElementById('subtitle').textContent = M.subtitle || '';
+  document.title = M.title || document.title;
+  window.addEventListener('hashchange', route);
+  route();
+})();
+</script>
+</body>
+</html>
