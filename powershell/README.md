@@ -5,7 +5,7 @@ Windows-Variante zum Archivieren einer **FriedaWeb**-Datenbank (Friedhofsverwalt
 | Ergebnis | Inhalt | Zweck |
 | --- | --- | --- |
 | `<backup>.xlsx` | Fachliche Tabellen, weitere Fachtabellen und verwendete Nachschlagetabellen (`Ref_…`) als Blätter, IDs durch Klartext ersetzt, Dokument-Links | Arbeiten und Auswerten in Excel |
-| `<backup>.html` | Archivansicht mit Suche nach Gräbern und Personen, Detailseiten, verlinkten Nachschlagewerten, Dokument-Links, Druckvorlage | Nachschlagen im Browser, ohne Installation |
+| `<backup>.html` | Archivansicht mit Grabauswahl wie in FRIEDA, Grabinfo mit Belegung, Verstorbenen im Grab, Detailseiten, verlinkten Nachschlagewerten, Dokument-Links, Druckvorlage | Nachschlagen im Browser, ohne Installation |
 | `<backup>_Dokumente\` | Alle Dokumente als einzelne Dateien, Berichtsvorlagen im Unterordner `Berichtsvorlagen` | Ziel der Links in Excel und HTML |
 | `<backup>.sqlite` | *nur mit `-KeepSqlite`:* 1:1-Kopie **aller** Tabellen inkl. IDs und Schlüssel | optional |
 
@@ -173,12 +173,13 @@ Laufzeit: bei einer Sicherung von rund 1 GB mit mehreren tausend Dokumenten weni
 ### 4.1 Excel
 
 - Blatt **Info**: Quelle, Friedhof, letzter Sterbefall, letzte Änderung, Dokumentstatistik, Hinweise, Zeilenzahl je Blatt.
+- **Verstorbene im Grab** (direkt nach „Gräber“): abgeleitetes Blatt mit den Bestatteten je Grab – Friedhof, Abteilung, Reihe, Grabnummer, Name, Geburts-, Sterbe- und Bestattungsdatum, Bestattungsart, Grabstelle, Position, Ruhezeit bis. Quelle ist die Personentabelle mit Grabverweis (`tbl_Person` mit `Kategorie_B` = bestattet, sonst `tbl_Verstorbener`); `Grab_ID` und `Person_ID` verweisen auf die Quellblätter. Nur in Excel und HTML, nicht in SQLite.
 - Je ein Blatt für Gräber, Grabstellen, Grab_Grabstelle, Verstorbene, Verstorbene_Archiv, Personen, Berechtigte, Berechtigte_Archiv, Berechtigungen, Nutzungsverlauf, Abrechnungen, Bescheide, Dokumente, Dokumentablage, Verlauf und Ereignisprotokoll – jeweils soweit in der Sicherung vorhanden. **Blätter ohne Zeilen entfallen**; das Info-Blatt nennt sie, in SQLite bleiben sie enthalten.
 - **Weitere Fachtabellen** (soweit vorhanden): Protokoll, Sperrungen, Grabkontrollen, Kontrollmängel, Grabmalgenehmigungen, Grabmalauflagen, Rechnungsempfänger, Bankverbindung, Berichtsvorlagen.
 - **Nachschlagetabellen `Ref_…`:** jede Nachschlagetabelle, auf die eine exportierte Tabelle verweist, mit allen Feldern (z. B. `Ref_Firma` mit Adressen und Telefon, `Ref_Gebuehr` mit Beträgen und Gültigkeit, `Ref_Grabart` mit Ruhe-/Nutzungsdauern).
 - Nachschlage-IDs (Grabart, Reihe, Konfession, Firma …) sind durch Klartext ersetzt; die Überschrift verliert Präfix und `_ID`. Hat eine Nachschlagetabelle keine Bezeichnung, wird ihr inhaltliches Feld gezeigt (z. B. Anrede „Frau/Herr“).
-- **Ergänzte Verknüpfungen:** Einige Bezüge speichert FriedaWeb ohne Fremdschlüssel (z. B. Bescheid → Grab, Abrechnung → Person, Dokument → Person). Sie werden als Klartext bzw. Verknüpfung dargestellt, aber nur, wenn jede ID im Ziel existiert; das Info-Blatt listet sie auf.
-- Verweise auf ein **Grab** behalten die ID und erhalten daneben die Spalte „Grab“ (`Reihe / Grabnummer`); Verweise auf **Personen** behalten die ID und erhalten „Nachname, Vorname“. Über die IDs lassen sich Blätter per XVERWEIS verbinden.
+- **Ergänzte Verknüpfungen:** Einige Bezüge speichert FriedaWeb ohne Fremdschlüssel (z. B. Bescheid → Grab, Abrechnung → Person, Dokument → Person, Sperrung → Grabstelle). Sie werden als Klartext bzw. Verknüpfung dargestellt, aber nur, wenn jede ID im Ziel existiert; das Info-Blatt listet sie auf.
+- Verweise auf ein **Grab** behalten die ID und erhalten daneben die Spalte „Grab“ (`Reihe / Grabnummer`); Verweise auf **Personen** behalten die ID und erhalten „Nachname, Vorname“; Verweise auf eine **Grabstelle** behalten die ID und erhalten „Reihe / Grabstelle“. Der Verweis einer Person auf die Zuordnung Grab–Grabstelle zeigt die Bezeichnung der Grabstelle (z. B. „02“). Über die IDs lassen sich Blätter per XVERWEIS verbinden.
 - „Titel#Pfad“-Felder sind in Titel und Pfad geteilt; die Binärspalte `Daten` ist durch **Datei** (Link) und **Dateiquelle** ersetzt.
 - Echte Datumswerte (TT.MM.JJJJ), Texte immer als Text (kein Ausführen von `=…` als Formel), erste Zeile fixiert, Autofilter.
 
@@ -208,15 +209,16 @@ Excel und HTML verlinken **relativ** auf diesen Ordner: Ergebnisdateien und Doku
 
 `<backup>.html` per Doppelklick öffnen (Edge). Die Datei enthält alle Daten selbst und läuft offline, ohne Server und ohne Installation. **Nur Lesen.**
 
-- **Start:** Einstieg wählen – *Gräber durchsuchen* oder *Personen durchsuchen*.
-- **Gräbersuche:** Freitext (Grabnummer, Reihe, Namen der Verstorbenen und Berechtigten); Filter Friedhof, Block, Reihe, Grabart, „nur mit Dokumenten“.
-- **Personensuche:** Freitext (Name, Geburtsname, Adresse, Ort); Filter Rolle (Verstorbene/Berechtigte), Sterbedatum von–bis, Friedhof. Die Liste zeigt das zugehörige Grab.
-- **Detailseiten:** alle Felder des Datensatzes und alle verknüpften Daten (beim Grab z. B. Personen mit Rolle und Bezug, Grabstelle, Berechtigungen, Nutzungsverlauf, Bescheide, Dokumente). Verweise und Zeilen sind anklickbar; „Zurück“ funktioniert wie gewohnt. Ja/Nein-Werte erscheinen in Tabellen als Häkchen.
+- **Grabauswahl wie in FRIEDA** (Startseite): Kennzeichen *aktuelle / abgelaufene / zurückgegebene / gesperrte Gräber*, Auswahl Friedhof → Abteilung → Reihe → Grab, Blättern mit `<<` `>>`. Darunter die Trefferliste mit Schnellsuche (Grabnummer oder Name der Verstorbenen) und „nur mit Dokumenten“. Eine eigene Personensuche gibt es nicht; Personen sind über das Grab erreichbar.
+- **Grabstatus** (Vorrang in dieser Reihenfolge): *gesperrt* = eine Sperrung des Grabs bzw. einer ihm heute zugeordneten Grabstelle gilt heute; *zurückgegeben* = Rückgabedatum erreicht; *abgelaufen* = Nutzungszeit vor heute beendet; sonst *aktuell*.
+- **Grabseite:** *Grabinfo* mit Friedhof, Abteilung, Reihe, Grab, Grabart, Grabstellen (z. B. „01–03 (3 Stellen)“), Status, Ersterwerb, erste Bestattung, Nutzungszeit bis, Ruhezeit bis (rot, wenn abgelaufen) und den aktuell Nutzungsberechtigten; Tabelle **Belegt / Frei / Möglich** für Erdbestattungen und Urnen; Tabelle **Verstorbene im Grab** (Nachname, Vorname, Geburts-, Sterbe- und Bestattungsdatum, Art mit E = Erd-/U = Urnenbestattung, Grabstelle, Position). Alle übrigen Angaben (alle Felder, Personen mit allen Bezügen, Berechtigungen, Nutzungsverlauf, Bescheide, Dokumente, weitere Fachtabellen) stehen **eingeklappt** unter „Weitere Angaben“.
+- **Belegung:** „Möglich“ = Erd- bzw. Urnenplätze laut Grabstellen-Zuordnung (Kennzeichen E1 … / U1 …), „Belegt“ = Bestattete mit laufender Ruhezeit, „Frei“ = Differenz – jeweils zum heutigen Datum berechnet. Ohne Platz-Kennzeichen im Datenmodell entfällt die Tabelle.
+- **Detailseiten** (Personen, Nachschlagewerte, weitere Tabellen): alle Felder und alle verknüpften Daten. Verweise und Zeilen sind anklickbar; „Zurück“ funktioniert wie gewohnt. Ja/Nein-Werte erscheinen in Tabellen als Häkchen.
 - **Nachschlagewerte als Link:** Klartexte wie Friedhof, Grabart, Bestatter oder Gebühr öffnen die Detailseite des Eintrags mit allen Feldern (z. B. Adresse und Telefon des Bestatters).
 - **Weitere Fachtabellen** (Grabkontrollen, Grabmalgenehmigungen, Protokoll …) erscheinen als **eingeklappte Unterpunkte** an Grab bzw. Bescheid; ebenso die Rückverweise einer Nachschlagetabelle (z. B. alle Gräber einer Grabart).
 - **Info-Seite:** Liste aller Tabellen (Hauptbereiche, weitere Fachtabellen, Nachschlagetabellen); jede lässt sich als Liste mit Suche öffnen.
 - **Sortieren** per Klick auf die Spaltenüberschrift, **Trefferliste als CSV**.
-- **Drucken** (Knopf oder Strg+P): eigene Druckvorlage im Querformat A4 – Grab- bzw. Personenblatt mit allen Feldern und verknüpften Bereichen, breite Bereiche als Datensatz-Blöcke; Trefferlisten vollständig mit Filterangabe. Für die Seitenzahl in Edge unter *Weitere Einstellungen* die Option **„Kopf- und Fußzeilen“ deaktivieren**.
+- **Drucken** (Knopf oder Strg+P): eigene Druckvorlage im Querformat A4. **Gedruckt wird, was aufgeklappt ist:** an der Grabseite immer das Grabblatt (Grabinfo, Belegung, Verstorbene im Grab), dazu jeder geöffnete Bereich unter „Weitere Angaben“; an anderen Detailseiten die Felder und die sichtbaren bzw. geöffneten Bereiche. Breite Bereiche erscheinen als Datensatz-Blöcke; Trefferlisten vollständig mit Filterangabe. Für die Seitenzahl in Edge unter *Weitere Einstellungen* die Option **„Kopf- und Fußzeilen“ deaktivieren**.
 - **Dokumente:** Klick auf den Dateinamen öffnet das Dokument; **„Pfad“** kopiert den vollständigen Dateipfad (z. B. zum Öffnen im Explorer).
 
 Nicht enthalten sind die reinen Protokolle (Verlauf, Ereignisprotokoll); diese stehen in Excel und SQLite.
@@ -266,7 +268,7 @@ Nicht enthalten sind die reinen Protokolle (Verlauf, Ereignisprotokoll); diese s
 - **1900-01-01** wurde in FriedaWeb als Platzhalter für unbekannte Datumswerte verwendet und ist unverändert übernommen.
 - **`Kategorie_B`** in `tbl_Person` kennzeichnet in FriedaWeb Bestattete, nicht Berechtigte; als „Berechtigte“ gelten in der Archivansicht die Einträge der Berechtigungstabelle.
 - Die Archivansicht ist eine Momentaufnahme des Exports; Änderungen sind nicht vorgesehen.
-- **Nicht verknüpft** werden Verweise, die sich nicht eindeutig zuordnen lassen, z. B. Archiv-Verweise `Verstorbener_ID`, die auf keine vorhandene Person zeigen, sowie Sperrungen und Grabkontrollen, wenn nicht jede Grab-ID existiert; diese Werte bleiben als ID bzw. als eigene Textangaben (Friedhof, Reihe, Grabnummer) erhalten.
+- **Nicht verknüpft** werden Verweise, die sich nicht eindeutig zuordnen lassen, z. B. Archiv-Verweise `Verstorbener_ID`, die auf keine vorhandene Person zeigen, sowie Grabkontrollen, wenn nicht jede Grab-ID existiert; diese Werte bleiben als ID bzw. als eigene Textangaben (Friedhof, Reihe, Grabnummer) erhalten.
 - Nicht in Excel/HTML (nur in der `.bak`): Benutzerrollen und -rechte, Programmeinstellungen, Symbolleisten und ungenutzte Nachschlagelisten wie PLZ- und BLZ-Verzeichnis.
 
 ---

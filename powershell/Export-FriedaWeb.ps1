@@ -217,7 +217,14 @@ $ImplicitForeignKeys = @(
     @{ Table = 'tbl_Grabkontrolle'; Column = 'tbl_Grab_ID'; Targets = @('tbl_Grab') }
     @{ Table = 'tblkett_GMauflage_GMgenehm'; Column = 'tbl_Grabmalgenehmigung_ID'; Targets = @('tbl_Grabmalgenehmigung') }
     @{ Table = 'tblkett_GMauflage_GMgenehm'; Column = 'tbl_Grab_ID'; Targets = @('tbl_Grab') }
+    # Sperrungen gelten je Grabstelle (Rückgabedatum im Sperrtext passt zum Grab der Grabstelle).
+    @{ Table = 'tbl_Sperrung'; Column = 'Objekt_ID'; Targets = @('tbl_Grabstelle') }
 )
+# Abgeleitetes Blatt "Verstorbene im Grab": Bestattete je Grab in Klartext (wie die Grabansicht in FRIEDA).
+# Quelle ist die erste vorhandene Personentabelle mit Grabverweis; Kategorie_B kennzeichnet dort die Bestatteten.
+$BurialTable = 'fw_VerstorbeneImGrab'
+$BurialSheetName = 'Verstorbene im Grab'
+$BurialSourceTables = @('tbl_Person', 'tbl_Verstorbener')
 # Verweise auf diese Tabellen behalten die ID und erhalten daneben "Nachname, Vorname".
 $PersonTables = @('tbl_Person', 'tbl_Verstorbener', 'tbl_Berechtigter')
 $LabelColumns = @('Bezeichnung', 'Firmenname', 'Firma', 'Block')
@@ -776,6 +783,40 @@ function Get-LabelMap {
             $map[(ConvertTo-LookupKey -Value $row[0])] = '{0} / {1}' -f $reiheLabel, $row[$iNummer]
         }
     }
+    elseif ($Table -eq 'tbl_Grabstelle' -and $names -contains 'Bezeichnung') {
+        # Grabstelle: "Reihe / Bezeichnung" wie beim Grab (die Bezeichnung allein wiederholt sich je Reihe).
+        $iBezeichnung = [array]::IndexOf($names, 'Bezeichnung')
+        $reiheColumn = Get-ForeignKeyColumn -Table $Table -Parent 'tblxx_Reihe'
+        $iReihe = -1
+        $reihe = @{}
+        if ($reiheColumn) {
+            $iReihe = [array]::IndexOf($names, $reiheColumn)
+            $reihe = Get-LabelMap -Table 'tblxx_Reihe'
+        }
+        foreach ($row in $data[$Table]) {
+            $label = $row[$iBezeichnung]
+            if ($iReihe -ge 0 -and $null -ne $row[$iReihe] -and $reihe.ContainsKey((ConvertTo-LookupKey -Value $row[$iReihe]))) {
+                $label = '{0} / {1}' -f $reihe[(ConvertTo-LookupKey -Value $row[$iReihe])], $label
+            }
+            $map[(ConvertTo-LookupKey -Value $row[0])] = $label
+        }
+    }
+    elseif ($Table -eq 'tblkett_Grab_Grabstelle') {
+        # Zuordnung Grab–Grabstelle: die Bezeichnung der Grabstelle (z. B. "02") statt der internen ID.
+        $stellen = Get-GrabstellenBezeichnung
+        $stelleColumn = Get-ForeignKeyColumn -Table $Table -Parent 'tbl_Grabstelle'
+        $iStelle = -1
+        if ($stelleColumn) {
+            $iStelle = [array]::IndexOf($names, $stelleColumn)
+        }
+        foreach ($row in $data[$Table]) {
+            $label = $row[0]
+            if ($iStelle -ge 0 -and $null -ne $row[$iStelle] -and $stellen.ContainsKey((ConvertTo-LookupKey -Value $row[$iStelle]))) {
+                $label = $stellen[(ConvertTo-LookupKey -Value $row[$iStelle])]
+            }
+            $map[(ConvertTo-LookupKey -Value $row[0])] = $label
+        }
+    }
     elseif ($PersonTables -contains $Table) {
         # Personen: "Nachname, Vorname" (leere Teile entfallen); ohne Namen bleibt die ID.
         $iNachname = [array]::IndexOf($names, 'Nachname')
@@ -840,6 +881,229 @@ function Get-LabelMap {
 
     $labelMapCache[$Table] = $map
     return $map
+}
+
+function Get-ForeignKeyColumn {
+    <#
+    .SYNOPSIS
+        Spalte einer Tabelle, die auf die angegebene Tabelle verweist ($null, wenn keine). Bei mehreren
+        Verweisen gilt die nach der Zieltabelle benannte Spalte (z. B. tbl_Grab_ID statt tbl_GrabVormerkung_ID).
+    #>
+    param([string]$Table, [string]$Parent)
+
+    $found = $null
+    if ($foreignKeys.ContainsKey($Table)) {
+        foreach ($column in $foreignKeys[$Table].Keys) {
+            if ($foreignKeys[$Table][$column][0] -eq $Parent) {
+                if ((Get-SheetHeader -Column $column) -eq (Get-SheetHeader -Column $Parent)) {
+                    return $column
+                }
+                if ($null -eq $found) {
+                    $found = $column
+                }
+            }
+        }
+    }
+    return $found
+}
+
+function Get-GrabstellenBezeichnung {
+    <#
+    .SYNOPSIS
+        Zuordnung ID -> Bezeichnung (z. B. "02") der Grabstellen; leer, wenn die Tabelle fehlt.
+    #>
+    $map = @{}
+    if ($tables -notcontains 'tbl_Grabstelle') {
+        return $map
+    }
+    $names = [string[]]@($columns['tbl_Grabstelle'] | ForEach-Object { $_.Name })
+    $iBezeichnung = [array]::IndexOf($names, 'Bezeichnung')
+    if ($iBezeichnung -ge 0) {
+        foreach ($row in $data['tbl_Grabstelle']) {
+            $map[(ConvertTo-LookupKey -Value $row[0])] = $row[$iBezeichnung]
+        }
+    }
+    return $map
+}
+
+function Get-BurialTable {
+    <#
+    .SYNOPSIS
+        Belegung je Grab ("Verstorbene im Grab"): bestattete Personen mit Friedhof, Abteilung, Reihe, Grab,
+        Grabstelle, Position und Bestattungsdaten in Klartext. $null, wenn keine Personentabelle mit
+        Grabverweis vorhanden ist.
+    #>
+    $source = $null
+    $grabColumn = $null
+    foreach ($candidate in $BurialSourceTables) {
+        if ($tables -contains $candidate -and $data[$candidate].Count -gt 0) {
+            $grabColumn = Get-ForeignKeyColumn -Table $candidate -Parent 'tbl_Grab'
+            if ($grabColumn) {
+                $source = $candidate
+                break
+            }
+        }
+    }
+    if (-not $source) {
+        return $null
+    }
+
+    $names = [string[]]@($columns[$source] | ForEach-Object { $_.Name })
+    # Spalte über den Namen oder – bei Verweisen – über die bereinigte Überschrift (z. B. tblxx_Position_ID -> Position)
+    $find = {
+        param([string]$Name)
+        $found = [array]::IndexOf($names, $Name)
+        for ($k = 0; $found -lt 0 -and $k -lt $names.Count; $k++) {
+            if ((Get-SheetHeader -Column $names[$k]) -eq $Name) {
+                $found = $k
+            }
+        }
+        $found
+    }
+    $sourceForeignKeys = @{}
+    if ($foreignKeys.ContainsKey($source)) {
+        $sourceForeignKeys = $foreignKeys[$source]
+    }
+    # Klartext einer Spalte (Verweise über die Nachschlagetabelle aufgelöst)
+    $text = {
+        param($Row, [int]$Index)
+        if ($Index -lt 0 -or $null -eq $Row[$Index]) {
+            return $null
+        }
+        if ($sourceForeignKeys.Contains($names[$Index])) {
+            $labels = Get-LabelMap -Table $sourceForeignKeys[$names[$Index]][0]
+            $key = ConvertTo-LookupKey -Value $Row[$Index]
+            if ($labels.ContainsKey($key)) {
+                return $labels[$key]
+            }
+        }
+        return $Row[$Index]
+    }
+
+    $iId = [array]::IndexOf($names, 'ID')
+    $iGrab = [array]::IndexOf($names, $grabColumn)
+    $iBuried = [array]::IndexOf($names, 'Kategorie_B')
+    $iNachname = & $find 'Nachname'
+    $iVorname = & $find 'Vorname'
+    $iGeburt = & $find 'Geburtsdatum'
+    $iSterbe = & $find 'Sterbedatum'
+    $iBestattung = & $find 'Bestattungsdatum'
+    $iArt = & $find 'Bestattungsart'
+    $iRuhe = & $find 'RuheEnde'
+    $iPosition = @(@('Position', 'Sarglage', 'Sargposition', 'Urnenposition') | ForEach-Object { & $find $_ } | Where-Object { $_ -ge 0 })
+    $iStellenNr = & $find 'GrabstellenNr'
+    $kettColumn = Get-ForeignKeyColumn -Table $source -Parent 'tblkett_Grab_Grabstelle'
+    $iKett = -1
+    $kettLabels = @{}
+    if ($kettColumn) {
+        $iKett = [array]::IndexOf($names, $kettColumn)
+        $kettLabels = Get-LabelMap -Table 'tblkett_Grab_Grabstelle'
+    }
+
+    # Grab: Friedhof, Abteilung (Block), Reihe in Klartext und Grabnummer
+    $grabNames = [string[]]@($columns['tbl_Grab'] | ForEach-Object { $_.Name })
+    $grabParts = @(
+        foreach ($parent in @('tblxx_Friedhof', 'tblxx_Block', 'tblxx_Reihe')) {
+            $column = Get-ForeignKeyColumn -Table 'tbl_Grab' -Parent $parent
+            if ($column) {
+                @{ Index = [array]::IndexOf($grabNames, $column); Map = (Get-LabelMap -Table $parent) }
+            }
+            else {
+                @{ Index = -1; Map = @{} }
+            }
+        }
+    )
+    $iGrabNr = [array]::IndexOf($grabNames, 'GrabNr')
+    $graves = @{}
+    foreach ($row in $data['tbl_Grab']) {
+        $parts = New-Object 'object[]' 4
+        for ($p = 0; $p -lt 3; $p++) {
+            $index = $grabParts[$p].Index
+            if ($index -ge 0 -and $null -ne $row[$index]) {
+                $key = ConvertTo-LookupKey -Value $row[$index]
+                $parts[$p] = $(if ($grabParts[$p].Map.ContainsKey($key)) { $grabParts[$p].Map[$key] } else { $row[$index] })
+            }
+        }
+        if ($iGrabNr -ge 0) {
+            $parts[3] = $row[$iGrabNr]
+        }
+        $graves[(ConvertTo-LookupKey -Value $row[0])] = $parts
+    }
+
+    $definition = @(
+        @('Grab_ID', 'int'), @('Friedhof', 'nvarchar'), @('Abteilung', 'nvarchar'), @('Reihe', 'nvarchar'), @('GrabNr', 'nvarchar'),
+        @('Nachname', 'nvarchar'), @('Vorname', 'nvarchar'), @('Geburtsdatum', 'datetime'), @('Sterbedatum', 'datetime'),
+        @('Bestattungsdatum', 'datetime'), @('Bestattungsart', 'nvarchar'), @('Grabstelle', 'nvarchar'), @('Position', 'nvarchar'),
+        @('Ruhezeit bis', 'datetime'), @('Person_ID', 'int')
+    )
+    $burialColumns = New-Object 'System.Collections.Generic.List[object]'
+    foreach ($entry in $definition) {
+        $burialColumns.Add([pscustomobject]@{ Name = $entry[0]; Type = $entry[1] })
+    }
+
+    $rows = New-Object 'System.Collections.Generic.List[object[]]'
+    $keys = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($row in $data[$source]) {
+        if ($null -eq $row[$iGrab] -or ($iBuried -ge 0 -and $true -ne $row[$iBuried])) {
+            continue
+        }
+        $grave = $graves[(ConvertTo-LookupKey -Value $row[$iGrab])]
+        if ($null -eq $grave) {
+            continue
+        }
+        $stelle = $null
+        if ($iKett -ge 0 -and $null -ne $row[$iKett]) {
+            $stelle = $kettLabels[(ConvertTo-LookupKey -Value $row[$iKett])]
+        }
+        if ($null -eq $stelle -and $iStellenNr -ge 0) {
+            $stelle = $row[$iStellenNr]
+        }
+        $position = $null
+        foreach ($index in $iPosition) {
+            $position = & $text $row $index
+            if ($null -ne $position -and '' -ne $position) {
+                break
+            }
+        }
+        $values = [object[]]@(
+            $row[$iGrab], $grave[0], $grave[1], $grave[2], $grave[3],
+            $(if ($iNachname -ge 0) { $row[$iNachname] }), $(if ($iVorname -ge 0) { $row[$iVorname] }),
+            $(if ($iGeburt -ge 0) { $row[$iGeburt] }), $(if ($iSterbe -ge 0) { $row[$iSterbe] }),
+            $(if ($iBestattung -ge 0) { $row[$iBestattung] }), (& $text $row $iArt), $stelle, $position,
+            $(if ($iRuhe -ge 0) { $row[$iRuhe] }), $row[$iId]
+        )
+        $rows.Add($values)
+        $sortDate = ''
+        foreach ($date in @($values[9], $values[8])) {
+            if ($date -is [datetime]) {
+                $sortDate = $date.ToString('yyyy-MM-dd', $Invariant)
+                break
+            }
+        }
+        $keys.Add((@($grave[0], $grave[1], $grave[2], $grave[3], $sortDate) | ForEach-Object { [string]$_ }) -join [char]1)
+    }
+    if ($rows.Count -eq 0) {
+        return $null
+    }
+    # Reihenfolge wie im Grab: Friedhof, Abteilung, Reihe, Grabnummer, dann Bestattungs- bzw. Sterbedatum
+    $keyArray = $keys.ToArray()
+    $rowArray = $rows.ToArray()
+    [Array]::Sort($keyArray, $rowArray, [StringComparer]::Ordinal)
+    $sorted = New-Object 'System.Collections.Generic.List[object[]]'
+    foreach ($row in $rowArray) {
+        $sorted.Add($row)
+    }
+
+    $burialForeignKeys = [ordered]@{
+        Grab_ID   = @('tbl_Grab', 'ID')
+        Person_ID = @($source, 'ID')
+    }
+    return [pscustomobject]@{
+        Source      = $source
+        Columns     = $burialColumns
+        Rows        = $sorted
+        ForeignKeys = $burialForeignKeys
+    }
 }
 
 function New-SheetColumn {
@@ -1666,6 +1930,18 @@ FROM sys.foreign_key_columns fkc
 
     # --- Excel: Kerntabellen, Nachschlage-IDs durch Klartext ersetzt --------------------------------
     $labelMapCache = @{}
+
+    # Abgeleitetes Blatt "Verstorbene im Grab" direkt nach den Gräbern (nur Excel/HTML, nicht in SQLite)
+    $burial = Get-BurialTable
+    if ($null -ne $burial) {
+        $columns[$BurialTable] = $burial.Columns
+        $data[$BurialTable] = $burial.Rows
+        $foreignKeys[$BurialTable] = $burial.ForeignKeys
+        $burialSheet = @{ Name = $BurialSheetName; Table = $BurialTable; Plain = $true }
+        $grabSheetIndex = [array]::IndexOf([string[]]@($allSheets | ForEach-Object { $_.Table }), 'tbl_Grab')
+        $allSheets = @($allSheets[0..$grabSheetIndex]) + @($burialSheet) + @($allSheets | Select-Object -Skip ($grabSheetIndex + 1))
+    }
+
     $plans = @()
     $maxColumns = 3
     $emptySheets = New-Object 'System.Collections.Generic.List[string]'
@@ -1684,7 +1960,8 @@ FROM sys.foreign_key_columns fkc
         $names = [string[]]@($columns[$table] | ForEach-Object { $_.Name })
         $isDocumentTable = $DocumentTables.ContainsKey($table)
         $tableForeignKeys = @{}
-        if ($foreignKeys.ContainsKey($table)) {
+        if ($foreignKeys.ContainsKey($table) -and -not $sheet.ContainsKey('Plain')) {
+            # Plain: Werte sind bereits Klartext; Verweisspalten bleiben IDs (in der HTML-Ansicht verlinkt).
             $tableForeignKeys = $foreignKeys[$table]
         }
 
@@ -1716,6 +1993,11 @@ FROM sys.foreign_key_columns fkc
                 # Personenverweis: ID für XVERWEIS behalten, daneben der Name.
                 $sheetColumns.Add((New-SheetColumn -Header $column -Index $i))
                 $sheetColumns.Add((New-SheetColumn -Header (Get-SheetHeader -Column $column) -Index $i -Map $maps[$column]))
+            }
+            elseif ($parent -eq 'tbl_Grabstelle') {
+                # Grabstellenverweis: ID behalten, daneben "Reihe / Grabstelle".
+                $sheetColumns.Add((New-SheetColumn -Header $column -Index $i))
+                $sheetColumns.Add((New-SheetColumn -Header 'Grabstelle' -Index $i -Map $maps[$column]))
             }
             elseif ($maps.ContainsKey($column)) {
                 $sheetColumns.Add((New-SheetColumn -Header (Get-SheetHeader -Column $column) -Index $i -Map $maps[$column]))
@@ -1923,6 +2205,11 @@ FROM sys.foreign_key_columns fkc
         if ($implicitNotes.Count -gt 0) {
             $infoRows += , @{ Bold = $false; Values = @('Ergänzte Verknüpfungen', (($implicitNotes -join ', ') + ' – in FriedaWeb ohne Fremdschlüssel gespeichert, jede ID im Ziel vorhanden')) }
         }
+        if ($null -ne $burial) {
+            $infoRows += , @{ Bold = $false; Values = @($BurialSheetName, ("Abgeleitet aus $($burial.Source)" +
+                        $(if (@($columns[$burial.Source] | Where-Object { $_.Name -eq 'Kategorie_B' }).Count -gt 0) { ' (Kategorie_B = bestattet)' }) +
+                        ': je Grab die Bestatteten mit Grabstelle, Position und Bestattungsdaten in Klartext; Grab_ID und Person_ID verweisen auf die Quellblätter.')) }
+        }
         if ($referenceTables.Count -gt 0) {
             $infoRows += , @{ Bold = $false; Values = @('Referenztabellen', "Blätter '$ReferenceSheetPrefix…' enthalten die verwendeten Nachschlagetabellen mit allen Feldern (z. B. Firmenadressen, Gebührenbeträge).") }
         }
@@ -1948,6 +2235,7 @@ FROM sys.foreign_key_columns fkc
             ',"source":' + (ConvertTo-JsonText -Text "$bakName (Datenbank $db)") +
             ',"generated":"' + (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss', $Invariant) + '"' +
             ',"grabTable":"tbl_Grab"' +
+            $(if ($viewerTables -contains $BurialTable) { ',"burialTable":' + (ConvertTo-JsonText -Text $BurialTable) }) +
             ',"personTables":[' + ($viewerPersonTables -join ',') + ']' +
             ',"documentTables":[' + ($viewerDocumentTables -join ',') + ']' +
             ',"secondaryTables":[' + (@($plans | Where-Object { $_.Secondary -and $viewerTables -contains $_.Table } | ForEach-Object { ConvertTo-JsonText -Text $_.Table }) -join ',') + ']' +

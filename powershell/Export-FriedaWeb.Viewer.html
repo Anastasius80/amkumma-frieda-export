@@ -16,11 +16,11 @@
 <style>
 :root {
   --bg: #f5f6f8; --panel: #ffffff; --text: #1d2330; --muted: #5d6675; --line: #dde1e7;
-  --accent: #1f5fa8; --accent-soft: #e6eef8; --hover: #f0f4fa; --warn: #8a5a00;
+  --accent: #1f5fa8; --accent-soft: #e6eef8; --hover: #f0f4fa; --warn: #8a5a00; --bad: #c62828; --ok: #2e7d32;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #15181d; --panel: #1e2229; --text: #e4e7ec; --muted: #9aa3b2; --line: #343a45;
-          --accent: #79aef0; --accent-soft: #24324a; --hover: #262c36; --warn: #e2b04a; }
+          --accent: #79aef0; --accent-soft: #24324a; --hover: #262c36; --warn: #e2b04a; --bad: #ff8a80; --ok: #81c784; }
 }
 * { box-sizing: border-box; }
 body { margin: 0; font: 15px/1.45 "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); }
@@ -76,6 +76,18 @@ details.sub > summary { cursor: pointer; padding: 9px 14px; font-weight: 600; li
 details.sub > summary:hover { background: var(--hover); }
 details.sub[open] > summary { border-bottom: 1px solid var(--line); }
 details.sub > div { padding: 10px; }
+.statusbar { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-bottom: 12px; }
+.navbtns { display: flex; gap: 8px; }
+.navbtns button { flex: 1 1 auto; }
+.grabinfo { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 28px; margin-top: 14px; }
+.grabinfo h2 { grid-column: 1 / -1; margin: 0 0 8px; font-size: 16px; }
+.grabinfo .field { grid-template-columns: 46% 54%; }
+.occ { width: auto; min-width: 250px; font-size: 14px; }
+.occ th, .occ td { cursor: default; text-align: right; padding: 4px 10px; }
+.occ th:first-child, .occ td:first-child { text-align: left; }
+.occ tr.sum td { font-weight: 600; }
+.bad { color: var(--bad); font-weight: 600; }
+.ok { color: var(--ok); font-weight: 600; }
 .tablelist { columns: 3 260px; margin: 0; padding-left: 18px; }
 .tablelist li { break-inside: avoid; margin: 2px 0; }
 /* ---------- Druck: eigene Druckvorlage (#print), A4 quer ---------- */
@@ -113,9 +125,9 @@ details.sub > div { padding: 10px; }
 </head>
 <body>
 <header>
-  <a class="brand" href="#">FriedaWeb Archiv</a>
+  <a class="brand" href="#grab">FriedaWeb Archiv</a>
   <span class="sub" id="subtitle"></span>
-  <nav><a href="#grab" data-nav="grab">Gräber</a><a href="#person" data-nav="person">Personen</a><a href="#info" data-nav="info">Info</a></nav>
+  <nav><a href="#grab" data-nav="grab">Gräber</a><a href="#info" data-nav="info">Info</a></nav>
 </header>
 <main id="app"><p>Daten werden geladen …</p></main>
 <div id="print" aria-hidden="true"></div>
@@ -220,6 +232,9 @@ const FW = /*__FW_DATA__*/null;
   function rowText(t, r) { let s = ''; for (let i = 0; i < r.length; i++) if (!t.cols[i].x) { const f = fmt(r[i], t.cols[i]); if (f) s += f + ' '; } return s.toLowerCase(); }
 
   const grabTable = T[M.grabTable] || null;
+  // Abgeleitete Belegung je Grab ("Verstorbene im Grab", vom Exportskript aufbereitet)
+  const burialTable = (grabTable && T[M.burialTable]) || null;
+  const derivedTables = new Set(burialTable ? [burialTable.key] : []);
   const personTables = (M.personTables || []).map(k => T[k]).filter(Boolean);
   const documentTables = new Set((M.documentTables || []).filter(k => T[k]));
   const isPersonTable = t => personTables.includes(t);
@@ -261,7 +276,7 @@ const FW = /*__FW_DATA__*/null;
     // Umgekehrte Richtung: Tabellen, die auf diesen Datensatz und auf ein Grab verweisen (z. B. Berechtigung)
     if (t.idIdx >= 0) for (const rel of rev[t.key] || []) {
       const gi = rel.t.cols.findIndex(c => c.fk === grabTable.key);
-      if (gi < 0 || rel.t === grabTable) continue;
+      if (gi < 0 || rel.t === grabTable || derivedTables.has(rel.t.key)) continue;
       for (const cr of relMap(rel).get(String(r[t.idIdx])) || []) if (!isEmpty(cr[gi])) out.push({ id: String(cr[gi]), via: rel.t.name });
     }
     const seen = new Set();
@@ -306,7 +321,7 @@ const FW = /*__FW_DATA__*/null;
   function buildGrabIndex() {
     if (grabIndex || !grabTable) return grabIndex;
     const personKeys = new Set(personTables.map(t => t.key));
-    const rels = (rev[grabTable.key] || []).filter(rel => personKeys.has(rel.t.key) || rel.t.cols.some(c => c.fk && personKeys.has(c.fk)));
+    const rels = (rev[grabTable.key] || []).filter(rel => !derivedTables.has(rel.t.key) && (personKeys.has(rel.t.key) || rel.t.cols.some(c => c.fk && personKeys.has(c.fk))));
     const docRels = (rev[grabTable.key] || []).filter(rel => documentTables.has(rel.t.key));
     const byGrab = getPersonsByGrab();
     grabIndex = grabTable.rows.map(r => {
@@ -320,50 +335,163 @@ const FW = /*__FW_DATA__*/null;
         text += rowText(p.t, p.r);
         if (isDead(p.t, p.r)) deadSet.add(p.t.key + '|' + p.r[p.t.idIdx]);
       }
-      return { r, text, docs, dead: deadSet.size };
+      return { r, text, docs, dead: burialTable ? burialsOf(id).length : deadSet.size, status: grabStatus(r) };
     });
     return grabIndex;
   }
-  let personIndex = null;
-  function buildPersonIndex() {
-    if (personIndex) return personIndex;
-    personIndex = [];
-    for (const t of personTables) {
-      for (const r of t.rows) {
-        const death = val(t, r, 'Sterbedatum');
-        const graves = [...new Set(grabLinks(t, r).map(g => grabName(grabTable.byId.get(g.id))))].sort(collator.compare);
-        personIndex.push({ t, r, text: rowText(t, r) + graves.join(' ').toLowerCase(), name: personName(t, r),
-          dead: isDead(t, r), holder: isHolder(t, r), graves: graves.join('; '),
-          death: isEmpty(death) ? '' : String(death).slice(0, 10) });
-      }
-    }
-    return personIndex;
+
+  // ---------- Grab: Belegung, Grabstellen, Status (wie die Grabansicht in FRIEDA) ----------
+  const TODAY = (d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'))(new Date());
+  const dateKey = v => (isEmpty(v) ? '' : String(v).slice(0, 10));
+  const burialRel = burialTable ? (rev[grabTable.key] || []).find(rel => rel.t === burialTable) : null;
+  const burialsOf = id => (burialRel ? relMap(burialRel).get(String(id)) || [] : []);
+  const bval = (r, h) => val(burialTable, r, h);
+  // Erd- (E) oder Urnenbestattung (U): nach Position (E1, U2 …), sonst nach Bestattungsart
+  function burialKind(r) {
+    const p = String(bval(r, 'Position') ?? '').trim().toUpperCase();
+    if (/^[EU]\d/.test(p)) return p[0];
+    return /urne/i.test(String(bval(r, 'Bestattungsart') ?? '')) ? 'U' : 'E';
   }
+  // Zuordnung Grab–Grabstelle mit den Kennzeichen E1 … / U1 … (mögliche Erd- bzw. Urnenplätze je Grabstelle)
+  const slotTable = grabTable ? Object.values(T).find(t => t !== grabTable && !derivedTables.has(t.key)
+    && t.cols.some(c => c.r && c.fk === grabTable.key) && 'E1' in t.idx && 'U1' in t.idx) || null : null;
+  const slotRel = slotTable ? (rev[grabTable.key] || []).find(rel => rel.t === slotTable) : null;
+  const slotsOf = id => (slotRel ? relMap(slotRel).get(String(id)) || [] : []);
+  const stelleCol = slotTable ? slotTable.cols.findIndex(c => c.r && c.fk && c.fk !== grabTable.key && T[c.fk]) : -1;
+  function stelleName(s) {
+    const v = s[stelleCol], st = stelleCol >= 0 ? T[slotTable.cols[stelleCol].fk] : null, sr = st && st.byId.get(String(v));
+    const b = sr ? val(st, sr, 'Bezeichnung') : null;
+    return isEmpty(b) ? fmt(v) : String(b);
+  }
+  const flagIdx = (t, p) => t.cols.map((c, i) => (new RegExp('^' + p + '\\d+$').test(c.h) ? i : -1)).filter(i => i >= 0);
+  const flagCount = (r, idx) => idx.reduce((n, i) => n + (r[i] === true ? 1 : 0), 0);
+  // null, wenn das Datenmodell keine Platz-Kennzeichen (E1 … / U1 …) kennt
+  function occupancy(gr) {
+    if (!slotTable && !flagIdx(grabTable, 'E').length && !flagIdx(grabTable, 'U').length) return null;
+    const id = gr[grabTable.idIdx], slots = slotsOf(id);
+    let e = 0, u = 0;
+    if (slots.length) {
+      const ei = flagIdx(slotTable, 'E'), ui = flagIdx(slotTable, 'U');
+      for (const s of slots) { e += flagCount(s, ei); u += flagCount(s, ui); }
+    } else {
+      // ohne Grabstellen-Zuordnung: Kennzeichen am Grab je Grabstelle
+      const n = Number(val(grabTable, gr, 'AnzGrabstellen')) || 1;
+      e = flagCount(gr, flagIdx(grabTable, 'E')) * n; u = flagCount(gr, flagIdx(grabTable, 'U')) * n;
+    }
+    // belegt = Bestattete mit noch laufender Ruhezeit
+    const used = { E: 0, U: 0 };
+    for (const b of burialsOf(id)) if (dateKey(bval(b, 'Ruhezeit bis')) >= TODAY) used[burialKind(b)]++;
+    const line = (h, b, m) => ({ h, b, f: Math.max(m - b, 0), m });
+    const rows = [line('Erdbestattungen', used.E, e), line('Urnen', used.U, u)];
+    rows.push(line('Gesamt', used.E + used.U, e + u));
+    return rows;
+  }
+  function stellenText(gr) {
+    const names = slotsOf(gr[grabTable.idIdx]).map(stelleName).sort(collator.compare);
+    const n = names.length || Number(val(grabTable, gr, 'AnzGrabstellen')) || 0;
+    if (!n) return '';
+    const count = n + (n === 1 ? ' Stelle' : ' Stellen');
+    if (!names.length) return count;
+    const nums = names.map(Number);
+    const range = names.length > 1 && nums.every((x, i) => Number.isInteger(x) && (i === 0 || x === nums[i - 1] + 1));
+    return (range ? names[0] + '–' + names[names.length - 1] : names.join(', ')) + ' (' + count + ')';
+  }
+  // Sperrungen (je Grab oder je Grabstelle) mit Sperrdatum bis heute und ohne bzw. künftiger Freigabe
+  let lockedGraves = null;
+  function getLocked() {
+    if (lockedGraves) return lockedGraves;
+    lockedGraves = new Map();
+    const stelleTable = stelleCol >= 0 ? slotTable.cols[stelleCol].fk : null;
+    const lockTable = Object.values(T).find(t => /sperr/i.test(t.key) && 'Sperrdatum' in t.idx);
+    const lockCol = lockTable ? lockTable.cols.findIndex(c => c.r && c.fk && (c.fk === grabTable.key || c.fk === stelleTable)) : -1;
+    if (lockCol < 0) return lockedGraves;
+    const toGraves = new Map();
+    // Grabstelle -> Grab, dem die Grabstelle heute zugeordnet ist (Nutzbeginn/Nutzende der Zuordnung)
+    if (lockTable.cols[lockCol].fk === stelleTable) for (const s of slotTable.rows) {
+      const from = dateKey(val(slotTable, s, 'Nutzbeginn')), to = dateKey(val(slotTable, s, 'Nutzende'));
+      if ((from && from > TODAY) || (to && to < TODAY)) continue;
+      const k = String(s[stelleCol]);
+      (toGraves.get(k) || toGraves.set(k, []).get(k)).push(String(s[slotRel.i]));
+    }
+    for (const r of lockTable.rows) {
+      const from = dateKey(val(lockTable, r, 'Sperrdatum')), to = dateKey(val(lockTable, r, 'Freigabedatum'));
+      if (!from || from > TODAY || (to && to <= TODAY)) continue;
+      const ids = lockTable.cols[lockCol].fk === grabTable.key ? [String(r[lockCol])] : toGraves.get(String(r[lockCol])) || [];
+      for (const g of ids) if (!lockedGraves.has(g) || (lockedGraves.get(g) && (!to || to > lockedGraves.get(g)))) lockedGraves.set(g, to);
+    }
+    return lockedGraves;
+  }
+  // Status je Grab (Vorrang: gesperrt, zurückgegeben, abgelaufen, aktuell)
+  const STATUS = [['aktuell', 'aktuelle Gräber', 'aktuell'], ['abgelaufen', 'abgelaufene Gräber', 'abgelaufen'],
+    ['zurueck', 'zurückgegebene Gräber', 'zurückgegeben'], ['gesperrt', 'gesperrte Gräber', 'gesperrt']];
+  const statusLabel = k => (STATUS.find(s => s[0] === k) || [k, k, k])[2];
+  function grabStatus(gr) {
+    if (getLocked().has(String(gr[grabTable.idIdx]))) return 'gesperrt';
+    const back = dateKey(val(grabTable, gr, 'Rueckgabedatum'));
+    if (back && back <= TODAY) return 'zurueck';
+    const end = dateKey(val(grabTable, gr, 'NutzEnde'));
+    return end && end < TODAY ? 'abgelaufen' : 'aktuell';
+  }
+  // Reihenfolge wie in FRIEDA: Friedhof, Abteilung, Reihe, Grabnummer
+  const LEVELS = [['Friedhof', 'Friedhof'], ['Block', 'Abteilung'], ['Reihe', 'Reihe']];
+  const gtext = (r, h) => (h in grabTable.idx ? fmt(val(grabTable, r, h)) : '');
+  const grabNr = r => fmt(val(grabTable, r, 'GrabNr')) || grabName(r);
+  let gravesSorted = null;
+  const sortedGraves = () => gravesSorted || (gravesSorted = grabTable.rows.slice().sort((a, b) =>
+    LEVELS.reduce((d, [h]) => d || collator.compare(gtext(a, h), gtext(b, h)), 0) || collator.compare(grabNr(a), grabNr(b))));
+  const grabLocation = r => [...LEVELS.map(([h]) => gtext(r, h)), 'Grab ' + grabNr(r)].filter(Boolean).join(' · ');
   const terms = q => q.toLowerCase().split(/\s+/).filter(Boolean);
   const matches = (text, ts) => ts.every(x => text.includes(x));
 
   // ---------- Ansichten ----------
-  const state = {
-    grab: { q: '', f: {}, docsOnly: false, sort: null, shown: PAGE },
-    person: { q: '', role: '', from: '', to: '', f: {}, sort: null, shown: PAGE }
-  };
+  const newGrabState = () => ({ q: '', f: {}, status: new Set(STATUS.map(s => s[0])), docsOnly: false, sort: null, shown: PAGE });
+  const state = { grab: newGrabState() };
 
   function setNav(view) {
     document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === view));
   }
 
-  function startView() {
-    setNav('');
-    fill(app, 
-      el('h1', null, M.title || 'FriedaWeb Archiv'),
-      el('p', { class: 'muted' }, 'Wählen Sie den Einstieg:'),
-      el('div', { class: 'cards' },
-        grabTable && el('a', { class: 'card', href: '#grab' }, el('div', { class: 'big' }, 'Gräber durchsuchen'),
-          el('div', { class: 'count' }, grabTable.rows.length.toLocaleString('de-AT') + ' Gräber – Suche nach Grabnummer, Reihe, Friedhof oder Namen der Verstorbenen und Berechtigten')),
-        personTables.length > 0 && el('a', { class: 'card', href: '#person' }, el('div', { class: 'big' }, 'Personen durchsuchen'),
-          el('div', { class: 'count' }, personTables.reduce((n, t) => n + t.rows.length, 0).toLocaleString('de-AT') + ' Personen – Suche nach Name, Adresse, Sterbedatum'))),
-      el('p', { class: 'muted' }, 'Quelle: ' + (M.source || '') + ' · erstellt ' + (M.generated ? fmtDate(M.generated) : '')),
-      el('p', { class: 'note' }, 'Enthält personenbezogene Daten und Bankverbindungen – nur für berechtigte Personen.'));
+  // Grabauswahl wie in FRIEDA: Status-Kennzeichen, Friedhof → Abteilung → Reihe → Grab, Blättern mit << >>.
+  // current: aktuell angezeigtes Grab (Detailseite) oder null (Trefferliste); onChange: Ansicht neu aufbauen.
+  function selectionPanel(current, onChange) {
+    const st = state.grab;
+    const levels = LEVELS.filter(([h]) => h in grabTable.idx);
+    if (current) for (const [h] of levels) st.f[h] = gtext(current, h);
+    const pool = sortedGraves().filter(r => st.status.has(grabStatus(r)));
+    const statusBoxes = STATUS.map(([k, label]) => {
+      const cb = el('input', { type: 'checkbox', checked: st.status.has(k) });
+      cb.addEventListener('change', () => { if (cb.checked) st.status.add(k); else st.status.delete(k); st.shown = PAGE; onChange(); });
+      return el('label', { class: 'check' }, cb, label);
+    });
+    let rows = pool;
+    const selects = levels.map(([h, label], n) => {
+      const options = [...new Set(rows.map(r => gtext(r, h)).filter(Boolean))];
+      const s = el('select', null, el('option', { value: '' }, 'alle'), options.map(v => el('option', { value: v, selected: st.f[h] === v }, v)));
+      s.addEventListener('change', () => {
+        st.f[h] = s.value;
+        for (const [lower] of levels.slice(n + 1)) st.f[lower] = '';
+        st.shown = PAGE;
+        if (location.hash === '#grab') onChange(); else location.hash = '#grab';
+      });
+      if (st.f[h]) rows = rows.filter(r => gtext(r, h) === st.f[h]);
+      return el('label', null, label, s);
+    });
+    // Grabliste erst bei überschaubarer Auswahl (z. B. nach Wahl der Reihe)
+    const reiheChosen = !levels.some(([h]) => h === 'Reihe') || !!st.f.Reihe;
+    const listable = reiheChosen || rows.length <= 300;
+    const grave = el('select', { disabled: !listable },
+      el('option', { value: '' }, listable ? '– Grab wählen –' : 'zuerst Reihe wählen'),
+      listable ? rows.map(r => { const s = grabStatus(r);
+        return el('option', { value: r[grabTable.idIdx], selected: r === current }, (reiheChosen ? grabNr(r) : grabName(r)) + (s === 'aktuell' ? '' : ' – ' + statusLabel(s)));
+      }) : []);
+    grave.addEventListener('change', () => { if (grave.value) location.hash = detailHref(grabTable, grabTable.byId.get(grave.value)); });
+    const pos = current ? pool.indexOf(current) : -1;
+    const go = r => { location.hash = detailHref(grabTable, r); };
+    const prev = el('button', { title: 'Vorheriges Grab', disabled: pos <= 0, on: { click: () => go(pool[pos - 1]) } }, '<<');
+    const next = el('button', { title: 'Nächstes Grab', disabled: pos < 0 || pos >= pool.length - 1, on: { click: () => go(pool[pos + 1]) } }, '>>');
+    return el('div', { class: 'panel noprint' },
+      el('div', { class: 'statusbar' }, el('strong', null, 'Grabauswahl'), statusBoxes),
+      el('div', { class: 'search' }, selects, el('label', null, 'Grab', grave), el('div', { class: 'navbtns' }, prev, next)));
   }
 
   function resultTable(columns, items, st, onRow) {
@@ -391,48 +519,43 @@ const FW = /*__FW_DATA__*/null;
     document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   }
 
-  function distinct(t, h) {
-    if (!(h in t.idx)) return null;
-    const s = new Set();
-    for (const r of t.rows) { const v = r[t.idx[h]]; if (!isEmpty(v)) s.add(fmt(v, t.cols[t.idx[h]])); }
-    return [...s].sort(collator.compare);
-  }
-
   function grabView() {
     setNav('grab');
     if (!grabTable) { fill(app, el('p', null, 'Keine Gräber vorhanden.')); return; }
     const st = state.grab;
-    const filterHeads = ['Friedhof', 'Block', 'Reihe', 'Grabart'].filter(h => h in grabTable.idx);
-    const q = el('input', { type: 'search', placeholder: 'Grabnummer, Reihe, Name der Verstorbenen oder Berechtigten …', value: st.q, autofocus: true });
-    const selects = filterHeads.map(h => {
-      const s = el('select', null, el('option', { value: '' }, 'alle'), (distinct(grabTable, h) || []).map(v => el('option', { value: v, selected: st.f[h] === v }, v)));
-      s.addEventListener('change', () => { st.f[h] = s.value; st.shown = PAGE; run(); });
-      return el('label', null, h, s);
-    });
+    const levels = LEVELS.filter(([h]) => h in grabTable.idx);
+    const q = el('input', { type: 'search', placeholder: 'Grabnummer oder Name der Verstorbenen …', value: st.q });
     const docs = el('input', { type: 'checkbox', checked: st.docsOnly, on: { change: () => { st.docsOnly = docs.checked; st.shown = PAGE; run(); } } });
-    const reset = el('button', { on: { click: () => { state.grab = { q: '', f: {}, docsOnly: false, sort: null, shown: PAGE }; grabView(); } } }, 'Zurücksetzen');
-    const out = el('div');
-    fill(app, el('h1', null, 'Gräber durchsuchen'),
-      el('div', { class: 'panel search' }, el('label', { class: 'wide' }, 'Suche', q), selects,
+    const reset = el('button', { on: { click: () => { state.grab = newGrabState(); grabView(); } } }, 'Zurücksetzen');
+    const panelBox = el('div'), out = el('div');
+    fill(app, el('h1', null, 'Gräber'), panelBox,
+      el('div', { class: 'panel search noprint', style: 'margin-top:12px' }, el('label', { class: 'wide' }, 'Schnellsuche', q),
         documentTables.size > 0 && el('label', { class: 'check' }, docs, 'nur mit Dokumenten'), reset), out);
     let timer;
     q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => { st.q = q.value; st.shown = PAGE; run(); }, 200); });
+    q.focus();
     const columns = [
       { h: 'Grab', get: it => grabName(it.r) },
-      ...filterHeads.filter(h => h !== 'Reihe').map(h => ({ h, get: it => fmt(val(grabTable, it.r, h), grabTable.cols[grabTable.idx[h]]) })),
+      ...levels.filter(([h]) => h !== 'Reihe').map(([h, label]) => ({ h: label, get: it => gtext(it.r, h) })),
+      ...('Grabart' in grabTable.idx ? [{ h: 'Grabart', get: it => gtext(it.r, 'Grabart') }] : []),
+      { h: 'Status', get: it => statusLabel(it.status) },
       { h: 'Verstorbene', get: it => it.dead || '' },
       ...(documentTables.size ? [{ h: 'Dokumente', get: it => it.docs || '' }] : [])
     ];
     st.rerender = run;
     function run() {
+      fill(panelBox, selectionPanel(null, run));
       const ts = terms(st.q);
-      let items = buildGrabIndex().filter(it => matches(it.text, ts)
-        && filterHeads.every(h => !st.f[h] || fmt(val(grabTable, it.r, h), grabTable.cols[grabTable.idx[h]]) === st.f[h])
+      const order = new Map(sortedGraves().map((r, i) => [r, i]));
+      let items = buildGrabIndex().filter(it => st.status.has(it.status) && matches(it.text, ts)
+        && levels.every(([h]) => !st.f[h] || gtext(it.r, h) === st.f[h])
         && (!st.docsOnly || it.docs > 0));
-      if (!st.sort) items.sort((a, b) => collator.compare(grabName(a.r), grabName(b.r)));
+      if (!st.sort) items.sort((a, b) => order.get(a.r) - order.get(b.r));
       const res = resultTable(columns, items, st, it => { location.hash = detailHref(grabTable, it.r); });
+      const statusText = st.status.size < STATUS.length ? 'Status: ' + STATUS.filter(s => st.status.has(s[0])).map(s => s[2]).join(', ') : '';
       currentPrint = () => printList('Gräber – Trefferliste', columns, res.items,
-        [st.q && 'Suche „' + st.q + '“', ...filterHeads.filter(h => st.f[h]).map(h => h + ': ' + st.f[h]), st.docsOnly && 'nur mit Dokumenten'].filter(Boolean).join(' · '));
+        [st.q && 'Suche „' + st.q + '“', ...levels.filter(([h]) => st.f[h]).map(([h, label]) => label + ': ' + st.f[h]), statusText,
+          st.docsOnly && 'nur mit Dokumenten'].filter(Boolean).join(' · '));
       fill(out, toolbar(res.items, st, columns, 'Graeber.csv'), res.node, moreButton(res.items, st));
     }
     run();
@@ -448,64 +571,6 @@ const FW = /*__FW_DATA__*/null;
     return items.length > st.shown ? el('div', { class: 'more' }, el('button', { on: { click: () => { st.shown += PAGE * 5; st.rerender(); } } }, 'Weitere anzeigen')) : null;
   }
 
-  function personView() {
-    setNav('person');
-    if (!personTables.length) { fill(app, el('p', null, 'Keine Personen vorhanden.')); return; }
-    const st = state.person;
-    const index = buildPersonIndex();
-    const hasDeath = personTables.some(t => 'Sterbedatum' in t.idx);
-    const friedhofTable = personTables.find(t => 'Friedhof' in t.idx);
-    const q = el('input', { type: 'search', placeholder: 'Name, Geburtsname, Adresse, Ort …', value: st.q, autofocus: true });
-    const role = el('select', null, [['', 'alle'], ['dead', 'Verstorbene'], ['holder', 'Berechtigte']].map(([v, l]) => el('option', { value: v, selected: st.role === v }, l)));
-    const from = el('input', { type: 'date', value: st.from }), to = el('input', { type: 'date', value: st.to });
-    let friedhof = null;
-    if (friedhofTable) {
-      friedhof = el('select', null, el('option', { value: '' }, 'alle'), (distinct(friedhofTable, 'Friedhof') || []).map(v => el('option', { value: v, selected: st.f.Friedhof === v }, v)));
-    }
-    const reset = el('button', { on: { click: () => { state.person = { q: '', role: '', from: '', to: '', f: {}, sort: null, shown: PAGE }; personView(); } } }, 'Zurücksetzen');
-    const out = el('div');
-    fill(app, el('h1', null, 'Personen durchsuchen'),
-      el('div', { class: 'panel search' }, el('label', { class: 'wide' }, 'Suche', q), el('label', null, 'Rolle', role),
-        hasDeath && el('label', null, 'Sterbedatum von', from), hasDeath && el('label', null, 'Sterbedatum bis', to),
-        friedhof && el('label', null, 'Friedhof', friedhof), reset), out);
-    let timer;
-    q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => { st.q = q.value; st.shown = PAGE; run(); }, 200); });
-    for (const [inp, key] of [[role, 'role'], [from, 'from'], [to, 'to']]) inp.addEventListener('change', () => { st[key] = inp.value; st.shown = PAGE; run(); });
-    if (friedhof) friedhof.addEventListener('change', () => { st.f.Friedhof = friedhof.value; st.shown = PAGE; run(); });
-    const address = it => {
-      const t = it.t, r = it.r;
-      const street = [val(t, r, 'Strasse'), val(t, r, 'HausNr'), val(t, r, 'HausNrZusatz')].filter(v => !isEmpty(v)).join(' ');
-      const city = [val(t, r, 'PLZ'), val(t, r, 'Ort')].filter(v => !isEmpty(v)).join(' ');
-      return [street, city].filter(Boolean).join(', ');
-    };
-    const dateOf = (it, h) => fmt(val(it.t, it.r, h), it.t.cols[it.t.idx[h]]);
-    const columns = [
-      { h: 'Name', get: it => it.name },
-      { h: 'Geburtsdatum', get: it => dateOf(it, 'Geburtsdatum'), key: it => val(it.t, it.r, 'Geburtsdatum') },
-      { h: 'Sterbedatum', get: it => dateOf(it, 'Sterbedatum'), key: it => val(it.t, it.r, 'Sterbedatum') },
-      { h: 'Adresse', get: address },
-      { h: 'Grab', get: it => it.graves || fmt(val(it.t, it.r, 'Grab')) },
-      { h: 'Rolle', get: it => [it.dead ? 'verstorben' : '', it.holder ? 'berechtigt' : ''].filter(Boolean).join(', ') },
-      ...(personTables.length > 1 ? [{ h: 'Quelle', get: it => it.t.name }] : [])
-    ];
-    st.rerender = run;
-    function run() {
-      const ts = terms(st.q);
-      let items = index.filter(it => matches(it.text, ts)
-        && (!st.role || (st.role === 'dead' ? it.dead : it.holder))
-        && (!st.from || (it.death && it.death >= st.from)) && (!st.to || (it.death && it.death <= st.to))
-        && (!st.f.Friedhof || fmt(val(it.t, it.r, 'Friedhof')) === st.f.Friedhof));
-      if (!st.sort) items.sort((a, b) => collator.compare(a.name, b.name));
-      const res = resultTable(columns, items, st, it => { if (it.t.idIdx >= 0) location.hash = detailHref(it.t, it.r); });
-      const roleText = { dead: 'Verstorbene', holder: 'Berechtigte' }[st.role];
-      currentPrint = () => printList('Personen – Trefferliste', columns, res.items,
-        [st.q && 'Suche „' + st.q + '“', roleText, st.from && 'Sterbedatum ab ' + fmtDate(st.from), st.to && 'bis ' + fmtDate(st.to),
-          st.f.Friedhof && 'Friedhof: ' + st.f.Friedhof].filter(Boolean).join(' · '));
-      fill(out, toolbar(res.items, st, columns, 'Personen.csv'), res.node, moreButton(res.items, st));
-    }
-    run();
-  }
-
   function valueNode(t, c, v) {
     if (isEmpty(v)) return '';
     const isRef = typeof v === 'object' && 'i' in v;
@@ -518,61 +583,165 @@ const FW = /*__FW_DATA__*/null;
     return fmt(v, c);
   }
 
-  function detailView(tableKey, id) {
-    const t = T[tableKey], r = t && t.byId.get(id);
-    setNav(t === grabTable ? 'grab' : isPersonTable(t) ? 'person' : '');
-    if (!r) { fill(app, el('p', null, 'Datensatz nicht gefunden.'), link('#', 'Zur Startseite')); return; }
+  // Eingeklappter Bereich; Inhalt wird erst beim Öffnen aufgebaut
+  function collapsible(head, count, build) {
+    const body = el('div');
+    const box = el('details', { class: 'sub' }, el('summary', null, el('span', { class: 'sub-title' }, head), count !== null && el('span', { class: 'badge' }, count)), body);
+    box.addEventListener('toggle', () => { if (box.open && !body.childElementCount) fill(body, build()); });
+    return box;
+  }
+  const simpleTable = (heads, rows, rowHref) => el('div', { class: 'tablewrap' }, el('table', null,
+    el('thead', null, el('tr', null, heads.map(h => el('th', null, h)))),
+    el('tbody', null, rows.map(cells => el('tr', { class: 'click', on: { click: () => { location.hash = rowHref(cells); } } },
+      cells.slice(1).map(c => cell(c)))))));
+  const personRole = p => [isDead(p.t, p.r) ? 'verstorben' : '', isHolder(p.t, p.r) ? 'berechtigt' : ''].filter(Boolean).join(', ');
+  const personsOfGrab = id => (getPersonsByGrab().get(id) || []).slice().sort((a, b) => collator.compare(personName(a.t, a.r), personName(b.t, b.r)));
+  // Aktuell Nutzungsberechtigte: Einträge der Berechtigungstabelle ohne bzw. mit künftigem Berechtigungsende
+  function holdersOfGrab(id) {
+    const out = [], seen = new Set();
+    let found = false;
+    for (const rel of rev[grabTable.key] || []) {
+      if (!/berechtigt/i.test(rel.t.key)) continue;
+      const pi = rel.t.cols.findIndex(c => c.r && c.fk && /berechtigter/i.test(c.h) && T[c.fk]);
+      if (pi < 0) continue;
+      found = true;
+      for (const cr of relMap(rel).get(String(id)) || []) {
+        const end = dateKey(val(rel.t, cr, 'Berechtigungsende'));
+        if (end && end < TODAY) continue;
+        const pt = T[rel.t.cols[pi].fk], pr = pt.byId.get(String(cr[pi]));
+        if (pr && !seen.has(pt.key + '|' + cr[pi]) && seen.add(pt.key + '|' + cr[pi])) out.push({ t: pt, r: pr });
+      }
+    }
+    return found ? out : personsOfGrab(id).filter(p => isHolder(p.t, p.r));
+  }
+
+  // Grabinfo wie der Kopf in FRIEDA: Lage, Grabstellen, Status, Belegung, Fristen, Nutzungsberechtigte
+  function grabInfo(r, id) {
+    const g = h => val(grabTable, r, h);
+    const dateOf = h => fmt(g(h), { t: 'd' });
+    const lock = getLocked().get(String(id));
+    const status = grabStatus(r);
+    const burials = burialsOf(id);
+    const firstBurial = burials.map(b => dateKey(bval(b, 'Bestattungsdatum'))).filter(Boolean).sort()[0];
+    const ruhe = dateKey(g('RuheEnde')), nutz = dateKey(g('NutzEnde'));
+    return {
+      lage: [...LEVELS.filter(([h]) => h in grabTable.idx).map(([h, label]) => [label, gtext(r, h)]), ['Grab', grabNr(r)],
+        ['Grabart', gtext(r, 'Grabart')], ['Grabstellen', stellenText(r)],
+        ['Status', statusLabel(status) + (status === 'gesperrt' ? (lock ? ' bis ' + fmtDate(lock) : ' (ohne Freigabedatum)') : '')]],
+      fristen: [['Ersterwerb', dateOf('Ersterwerb')], ['Erste Bestattung', firstBurial ? fmtDate(firstBurial) : ''],
+        ['Nutzungszeit bis', dateOf('NutzEnde'), nutz && nutz < TODAY], ['Ruhezeit bis', dateOf('RuheEnde'), ruhe && ruhe < TODAY],
+        ['Rückgabe', dateOf('Rueckgabedatum')]],
+      occupancy: occupancy(r),
+      holders: holdersOfGrab(id),
+      burials
+    };
+  }
+  const BURIAL_HEADS = ['Nachname', 'Vorname', 'Geburtsdatum', 'Sterbedatum', 'Bestattung', 'Art', 'Grabst.', 'Position'];
+  function burialCells(b) {
+    const art = bval(b, 'Bestattungsart');
+    return [fmt(bval(b, 'Nachname')), fmt(bval(b, 'Vorname')), fmt(bval(b, 'Geburtsdatum'), { t: 'd' }), fmt(bval(b, 'Sterbedatum'), { t: 'd' }),
+      fmt(bval(b, 'Bestattungsdatum'), { t: 'd' }), isEmpty(art) && isEmpty(bval(b, 'Position')) ? '' : (isEmpty(art) ? '' : art + ' ') + '(' + burialKind(b) + ')', fmt(bval(b, 'Grabstelle')), fmt(bval(b, 'Position'))];
+  }
+  const OCC_HEADS = ['', 'Belegt', 'Frei', 'Möglich'];
+
+  function grabDetailView(r, id) {
+    setNav('grab');
+    const info = grabInfo(r, id);
+    const kv = list => list.filter(([, v]) => !isEmpty(v)).map(([k, v, bad]) =>
+      el('div', { class: 'field' }, el('div', { class: 'k' }, k), el('div', { class: 'v' + (bad ? ' bad' : '') }, v)));
+    const occ = info.occupancy && el('table', { class: 'occ' }, el('thead', null, el('tr', null, OCC_HEADS.map(h => el('th', null, h)))),
+      el('tbody', null, info.occupancy.map(o => el('tr', o.h === 'Gesamt' ? { class: 'sum' } : null,
+        el('td', null, o.h), el('td', { class: o.b ? 'bad' : '' }, o.b), el('td', { class: o.f ? 'ok' : '' }, o.f), el('td', null, o.m)))));
+    const holderLinks = info.holders.flatMap((p, i) => [i ? '; ' : '', link(detailHref(p.t, p.r), personName(p.t, p.r))]);
+    const head = el('div', { class: 'panel grabinfo' },
+      el('h2', null, 'Grabinfo – ' + grabLocation(r)),
+      el('div', null, kv(info.lage)),
+      occ && el('div', null, occ, el('p', { class: 'muted', style: 'font-size:12px' }, 'Belegt = Bestattete mit laufender Ruhezeit (Stand ' + fmtDate(TODAY) + ').')),
+      el('div', null, kv(info.fristen), info.holders.length > 0 &&
+        el('div', { class: 'field' }, el('div', { class: 'k' }, 'Nutzungsberechtigte'), el('div', { class: 'v' }, holderLinks))));
+
+    const sections = [];
+    if (burialTable) {
+      sections.push(el('h2', null, 'Verstorbene im Grab', el('span', { class: 'badge' }, info.burials.length)),
+        info.burials.length ? simpleTable(BURIAL_HEADS, info.burials.map(b => {
+          const pt = T[burialTable.cols[burialTable.idx.Person_ID].fk], pr = pt && pt.byId.get(String(bval(b, 'Person_ID')));
+          const cells = burialCells(b);
+          return [pr ? detailHref(pt, pr) : '', pr ? link(detailHref(pt, pr), cells[0]) : cells[0], ...cells.slice(1)];
+        }), cells => cells[0] || location.hash) : el('p', { class: 'muted' }, 'Keine Bestatteten erfasst.'));
+    }
+    const prints = [];
+    sections.push(el('h2', null, 'Weitere Angaben', el('span', { class: 'muted', style: 'font-size:13px;font-weight:400;margin-left:10px' }, 'Aufgeklappte Bereiche werden mitgedruckt.')),
+      detailSections(grabTable, r, id, true, prints));
+    fill(app, selectionPanel(r, route),
+      el('div', { class: 'toolbar' }, el('button', { on: { click: () => history.back() } }, '← Zurück'),
+        el('span', { class: 'info' }), el('button', { on: { click: () => window.print() } }, 'Grabblatt drucken')),
+      head, sections);
+    currentPrint = () => printGrab(r, id, prints);
+  }
+
+  // Alle Felder und verknüpften Daten eines Datensatzes; allCollapsed: alles eingeklappt (Grab)
+  // prints: Druckeinträge {box, head, build} – gedruckt wird, was offen (bzw. nicht eingeklappt) ist.
+  function detailSections(t, r, id, allCollapsed, prints) {
     let showEmpty = false;
     const fieldsBox = el('div', { class: 'panel' });
+    const toggle = el('button', { class: 'noprint', on: { click: () => { showEmpty = !showEmpty; renderFields(); } } });
     function renderFields() {
-      fill(fieldsBox, el('div', { class: 'fields' }, t.cols.map((c, i) => {
-        if (c.x || (!showEmpty && isEmpty(r[i]))) return null;
-        return el('div', { class: 'field' }, el('div', { class: 'k' }, c.h), el('div', { class: 'v' }, valueNode(t, c, r[i])));
-      })));
+      toggle.textContent = showEmpty ? 'Leere Felder ausblenden' : 'Leere Felder einblenden';
+      fill(fieldsBox, el('div', { class: 'toolbar', style: 'margin-top:0' }, el('span', { class: 'info' }), toggle),
+        el('div', { class: 'fields' }, t.cols.map((c, i) => {
+          if (c.x || (!showEmpty && isEmpty(r[i]))) return null;
+          return el('div', { class: 'field' }, el('div', { class: 'k' }, c.h), el('div', { class: 'v' }, valueNode(t, c, r[i])));
+        })));
     }
     renderFields();
-    const toggle = el('button', { on: { click: () => { showEmpty = !showEmpty; toggle.textContent = showEmpty ? 'Leere Felder ausblenden' : 'Leere Felder einblenden'; renderFields(); } } }, 'Leere Felder einblenden');
     const sections = [];
-    const simpleTable = (heads, rows, rowHref) => el('div', { class: 'tablewrap' }, el('table', null,
-      el('thead', null, el('tr', null, heads.map(h => el('th', null, h)))),
-      el('tbody', null, rows.map(cells => el('tr', { class: 'click', on: { click: () => { location.hash = rowHref(cells); } } },
-        cells.slice(1).map(c => cell(c)))))));
+    const section = (head, count, build, collapsed, printBuild) => {
+      let box = null;
+      if (collapsed) sections.push(box = collapsible(head, count, build));
+      else sections.push(el('h2', null, head, count !== null && el('span', { class: 'badge' }, count)), build());
+      prints.push({ box, head: head + (count !== null ? ' (' + count + ')' : ''), build: printBuild });
+    };
+    const printFields = () => el('div', { class: 'p-fields' }, t.cols.map((c, i) => (c.x || isEmpty(r[i]) ? null : printKv(c.h, printValue(c, r[i])))));
+    if (allCollapsed) {
+      const box = collapsible('Alle Felder', null, () => fieldsBox);
+      sections.push(box);
+      prints.push({ box, head: 'Alle Felder', build: printFields });
+    }
+    else {
+      sections.push(fieldsBox);
+      prints.push({ box: null, head: null, build: printFields });
+    }
     if (t === grabTable) {
       // Personen zum Grab, auch über Zwischentabellen (z. B. Grab_Grabstelle, Berechtigung)
-      const persons = getPersonsByGrab().get(id) || [];
-      if (persons.length) {
-        const sorted = persons.slice().sort((a, b) => collator.compare(personName(a.t, a.r), personName(b.t, b.r)));
-        sections.push(el('h2', null, 'Personen', el('span', { class: 'badge' }, sorted.length)),
-          simpleTable(['Name', 'Rolle', 'Geburtsdatum', 'Sterbedatum', 'Bezug'], sorted.map(p => [detailHref(p.t, p.r),
-            link(detailHref(p.t, p.r), personName(p.t, p.r)),
-            [isDead(p.t, p.r) ? 'verstorben' : '', isHolder(p.t, p.r) ? 'berechtigt' : ''].filter(Boolean).join(', '),
-            fmt(val(p.t, p.r, 'Geburtsdatum'), { t: 'd' }), fmt(val(p.t, p.r, 'Sterbedatum'), { t: 'd' }), p.via]), cells => cells[0]));
-      }
+      const persons = personsOfGrab(id);
+      if (persons.length) section('Personen (alle Bezüge)', persons.length, () => simpleTable(['Name', 'Rolle', 'Geburtsdatum', 'Sterbedatum', 'Bezug'],
+        persons.map(p => [detailHref(p.t, p.r), link(detailHref(p.t, p.r), personName(p.t, p.r)), personRole(p),
+          fmt(val(p.t, p.r, 'Geburtsdatum'), { t: 'd' }), fmt(val(p.t, p.r, 'Sterbedatum'), { t: 'd' }), p.via]), cells => cells[0]), allCollapsed,
+        () => printTable(['Name', 'Rolle', 'Geburtsdatum', 'Sterbedatum', 'Bezug'], persons.map(p => [personName(p.t, p.r), personRole(p),
+          fmt(val(p.t, p.r, 'Geburtsdatum'), { t: 'd' }), fmt(val(p.t, p.r, 'Sterbedatum'), { t: 'd' }), p.via])));
     }
     if (isPersonTable(t) && grabTable) {
       const graves = grabLinks(t, r);
-      if (graves.length) {
-        sections.push(el('h2', null, 'Gräber', el('span', { class: 'badge' }, graves.length)),
-          simpleTable(['Grab', 'Bezug'], graves.map(g => {
-            const gr = grabTable.byId.get(g.id);
-            return [detailHref(grabTable, gr), link(detailHref(grabTable, gr), grabName(gr)), g.via];
-          }), cells => cells[0]));
-      }
+      if (graves.length) section('Gräber', graves.length, () => simpleTable(['Grab', 'Bezug'], graves.map(g => {
+        const gr = grabTable.byId.get(g.id);
+        return [detailHref(grabTable, gr), link(detailHref(grabTable, gr), grabLocation(gr)), g.via];
+      }), cells => cells[0]), allCollapsed,
+      () => printTable(['Grab', 'Bezug'], graves.map(g => [grabLocation(grabTable.byId.get(g.id)), g.via])));
     }
-    // Am Grab sind Personen bereits im Bereich "Personen" zusammengefasst (alle Bezüge) – direkte Verknüpfung nicht doppelt zeigen.
-    const groups = childRows(t.key, id).filter(g => !(t === grabTable && isPersonTable(g.rel.t)));
+    // Am Grab sind Personen bereits im Bereich "Personen" zusammengefasst; abgeleitete Tabellen nicht doppelt zeigen.
+    const groups = childRows(t.key, id).filter(g => !derivedTables.has(g.rel.t.key) && !(t === grabTable && isPersonTable(g.rel.t)));
     const perTable = {};
     for (const g of groups) perTable[g.rel.t.key] = (perTable[g.rel.t.key] || 0) + 1;
     const order = Object.keys(T);
     groups.sort((a, b) => order.indexOf(a.rel.t.key) - order.indexOf(b.rel.t.key));
     for (const g of groups) {
       const ct = g.rel.t, fkCol = ct.cols[g.rel.i];
-      const label = perTable[ct.key] > 1 ? ' (' + fkCol.h.replace(/^(tblxx_|loktbl_|tbl_)|_ID$/gi, '') + ')' : '';
+      const label = perTable[ct.key] > 1 ? ' (' + cleanHeader(fkCol.h) + ')' : '';
       const used = ct.cols.map((c, i) => i).filter(i => i !== g.rel.i && !ct.cols[i].x && g.rows.some(cr => !isEmpty(cr[i])));
       const rows = g.rows.slice().sort((a, b) => ct.idIdx >= 0 ? collator.compare(String(a[ct.idIdx]), String(b[ct.idIdx])) : 0);
-      // Weitere Fachtabellen, Rückverweise von Referenzen und große Mengen eingeklappt; Tabelle erst beim Öffnen aufbauen
-      const collapsed = secondaryTables.has(ct.key) || referenceTables.has(t.key) || referenceTables.has(ct.key) || rows.length > 50;
-      const buildTable = () => {
+      // Weitere Fachtabellen, Rückverweise von Referenzen und große Mengen eingeklappt
+      const collapsed = allCollapsed || secondaryTables.has(ct.key) || referenceTables.has(t.key) || referenceTables.has(ct.key) || rows.length > 50;
+      section(ct.name + label, rows.length, () => {
         const shown = rows.slice(0, MAX_SECTION_ROWS);
         return el('div', null,
           el('div', { class: 'tablewrap' }, el('table', null,
@@ -580,25 +749,25 @@ const FW = /*__FW_DATA__*/null;
             el('tbody', null, shown.map(cr => el('tr', ct.idIdx >= 0 ? { class: 'click', on: { click: () => { location.hash = detailHref(ct, cr); } } } : null,
               used.map(i => cell(valueNode(ct, ct.cols[i], cr[i]), cr[i]))))))),
           rows.length > shown.length && el('p', { class: 'muted' }, 'Angezeigt ' + shown.length.toLocaleString('de-AT') + ' von ' + rows.length.toLocaleString('de-AT') + ' – vollständig im Excel bzw. über die Suche.'));
-      };
-      if (collapsed) {
-        const body = el('div');
-        const box = el('details', { class: 'sub' }, el('summary', null, el('span', { class: 'sub-title' }, ct.name + label), el('span', { class: 'badge' }, rows.length)), body);
-        box.addEventListener('toggle', () => { if (box.open && !body.childElementCount) fill(body, buildTable()); });
-        sections.push(box);
-      }
-      else {
-        sections.push(el('h2', null, ct.name + label, el('span', { class: 'badge' }, rows.length)), buildTable());
-      }
+      }, collapsed, () => printRows(ct, rows.slice(0, MAX_SECTION_ROWS), g.rel.i));
     }
-    fill(app, 
-      el('div', { class: 'toolbar' }, el('button', { on: { click: () => history.back() } }, '← Zurück'),
-        el('span', { class: 'info' }), toggle, el('button', { on: { click: () => window.print() } }, 'Drucken')),
-      el('h1', null, title(t, r), el('span', { class: 'badge' }, t.name)),
-      fieldsBox, sections.length ? sections : el('p', { class: 'muted' }, 'Keine verknüpften Daten.'));
-    currentPrint = () => printDetail(t, r, id);
+    if (!allCollapsed && sections.length === 1) sections.push(el('p', { class: 'muted' }, 'Keine verknüpften Daten.'));
+    return sections;
   }
 
+  function detailView(tableKey, id) {
+    const t = T[tableKey], r = t && t.byId.get(id);
+    setNav(t === grabTable || isPersonTable(t) ? 'grab' : 'info');
+    if (!r) { fill(app, el('p', null, 'Datensatz nicht gefunden.'), link('#grab', 'Zur Grabauswahl')); return; }
+    if (t === grabTable) { grabDetailView(r, id); return; }
+    const prints = [];
+    fill(app,
+      el('div', { class: 'toolbar' }, el('button', { on: { click: () => history.back() } }, '← Zurück'),
+        el('span', { class: 'info' }), el('button', { on: { click: () => window.print() } }, 'Drucken')),
+      el('h1', null, title(t, r), el('span', { class: 'badge' }, t.name)),
+      detailSections(t, r, id, false, prints));
+    currentPrint = () => printDetail(t, r, prints);
+  }
   // Alle Tabellen gruppiert; jeder Eintrag führt zur Liste mit Suche
   function tableGroups() {
     const all = Object.values(T);
@@ -621,6 +790,8 @@ const FW = /*__FW_DATA__*/null;
         el('li', null, 'Nur Lesen: Änderungen sind nicht möglich. Die Excel-Datei enthält dieselben Bereiche (zusätzlich Verlauf und Ereignisprotokoll); die vollständigen Rohdaten enthält die Original-Sicherung.'),
         el('li', null, 'Dokumente öffnen sich über den Link; Edge lädt Office-Dokumente dabei in den Download-Ordner. Alternativ mit „Pfad“ den Dateipfad kopieren und im Explorer öffnen.'),
         el('li', null, 'HTML-Datei und Dokumentordner müssen gemeinsam im selben Ordner liegen.'),
+        el('li', null, 'Grabstatus (Vorrang in dieser Reihenfolge): gesperrt = eine Sperrung des Grabs bzw. einer ihm heute zugeordneten Grabstelle gilt heute; zurückgegeben = Rückgabedatum erreicht; abgelaufen = Nutzungszeit vor heute beendet; sonst aktuell.'),
+        el('li', null, 'Belegung: „Möglich“ = Erd- bzw. Urnenplätze laut Grabstellen (Kennzeichen E1 … / U1 …), „Belegt“ = Bestattete mit laufender Ruhezeit, „Frei“ = Differenz. Berechnet zum heutigen Datum.'),
         el('li', { class: 'note' }, 'Enthält personenbezogene Daten und Bankverbindungen (DSGVO) – Ablage und Weitergabe nur an berechtigte Personen.')));
   }
 
@@ -685,31 +856,32 @@ const FW = /*__FW_DATA__*/null;
       el('div', { class: 'p-rec-title' }, title(t, r)),
       el('div', { class: 'p-fields' }, used.filter(i => !isEmpty(r[i])).map(i => printKv(t.cols[i].h, printValue(t.cols[i], r[i])))))));
   }
-  function printDetail(t, r, id) {
-    const parts = [printHead(title(t, r), t.name),
-      el('div', { class: 'p-fields' }, t.cols.map((c, i) => (c.x || isEmpty(r[i]) ? null : printKv(c.h, printValue(c, r[i])))))];
-    const section = (head, content) => parts.push(el('div', { class: 'p-sec' }, el('h3', null, head), content));
-    if (t === grabTable) {
-      const persons = (getPersonsByGrab().get(id) || []).slice().sort((a, b) => collator.compare(personName(a.t, a.r), personName(b.t, b.r)));
-      if (persons.length) section('Personen (' + persons.length + ')', printTable(['Name', 'Rolle', 'Geburtsdatum', 'Sterbedatum', 'Bezug'],
-        persons.map(p => [personName(p.t, p.r), [isDead(p.t, p.r) ? 'verstorben' : '', isHolder(p.t, p.r) ? 'berechtigt' : ''].filter(Boolean).join(', '),
-          fmt(val(p.t, p.r, 'Geburtsdatum'), { t: 'd' }), fmt(val(p.t, p.r, 'Sterbedatum'), { t: 'd' }), p.via])));
-    }
-    if (isPersonTable(t) && grabTable) {
-      const graves = grabLinks(t, r);
-      if (graves.length) section('Gräber (' + graves.length + ')', printTable(['Grab', 'Bezug'], graves.map(g => [grabName(grabTable.byId.get(g.id)), g.via])));
-    }
-    const order = Object.keys(T);
-    const groups = childRows(t.key, id).filter(g => !(t === grabTable && isPersonTable(g.rel.t))).sort((a, b) => order.indexOf(a.rel.t.key) - order.indexOf(b.rel.t.key));
-    const perTable = {};
-    for (const g of groups) perTable[g.rel.t.key] = (perTable[g.rel.t.key] || 0) + 1;
-    for (const g of groups) {
-      const ct = g.rel.t;
-      const label = perTable[ct.key] > 1 ? ' – ' + cleanHeader(ct.cols[g.rel.i].h) : '';
-      const printed = g.rows.slice(0, MAX_SECTION_ROWS);
-      section(ct.name + label + ' (' + (printed.length < g.rows.length ? printed.length + ' von ' : '') + g.rows.length + ')', printRows(ct, printed, g.rel.i));
-    }
+  function printDetail(t, r, prints) {
+    const parts = [printHead(title(t, r), t.name)];
+    const section = (head, content) => parts.push(head ? el('div', { class: 'p-sec' }, el('h3', null, head), content) : content);
+    printOpen(prints, section);
     parts.push(el('div', { class: 'p-note' }, 'Auszug aus dem FriedaWeb-Archiv. Enthält personenbezogene Daten – nur für berechtigte Personen.'));
+    return parts;
+  }
+  // Aufgeklappte (bzw. nicht einklappbare) Bereiche der Ansicht drucken
+  function printOpen(prints, section) {
+    for (const p of prints) if (!p.box || p.box.open) section(p.head, p.build());
+  }
+  // Grabblatt: Grabinfo, Belegung, Verstorbene im Grab, Nutzungsberechtigte (eine Seite je Grab)
+  function printGrab(r, id, prints) {
+    const info = grabInfo(r, id);
+    const kvs = list => list.filter(([, v]) => !isEmpty(v)).map(([k, v]) => printKv(k, v));
+    const parts = [printHead('Grab ' + grabLocation(r), 'Grabblatt'),
+      el('div', { class: 'p-fields' }, kvs(info.lage), kvs(info.fristen),
+        info.holders.length > 0 && printKv('Nutzungsberechtigte', info.holders.map(p => personName(p.t, p.r)).join('; ')))];
+    const section = (head, content) => parts.push(el('div', { class: 'p-sec' }, el('h3', null, head), content));
+    if (info.occupancy) section('Belegung (Stand ' + fmtDate(TODAY) + ')', el('table', { class: 'p-table', style: 'width:auto' },
+      el('thead', null, el('tr', null, OCC_HEADS.map(h => el('th', null, h)))),
+      el('tbody', null, info.occupancy.map(o => el('tr', null, el('td', null, o.h), el('td', null, o.b), el('td', null, o.f), el('td', null, o.m))))));
+    if (burialTable) section('Verstorbene im Grab (' + info.burials.length + ')', info.burials.length
+      ? printTable(BURIAL_HEADS, info.burials.map(burialCells)) : el('p', null, 'Keine Bestatteten erfasst.'));
+    printOpen(prints, section);
+    parts.push(el('div', { class: 'p-note' }, 'Auszug aus dem FriedaWeb-Archiv. Enthält personenbezogene Daten – nur für berechtigte Personen. Weitere Angaben zum Grab in der Archivansicht bzw. im Excel.'));
     return parts;
   }
   function printList(head, columns, items, filterText) {
@@ -726,12 +898,10 @@ const FW = /*__FW_DATA__*/null;
   function route() {
     currentPrint = null;
     const parts = location.hash.replace(/^#/, '').split('/').map(decodeURIComponent);
-    if (parts[0] === 'grab') grabView();
-    else if (parts[0] === 'person') personView();
-    else if (parts[0] === 'd' && T[parts[1]]) detailView(parts[1], parts[2]);
+    if (parts[0] === 'd' && T[parts[1]]) detailView(parts[1], parts[2]);
     else if (parts[0] === 't' && T[parts[1]]) tableView(parts[1]);
     else if (parts[0] === 'info') infoView();
-    else startView();
+    else grabView();
     window.scrollTo(0, 0);
   }
   document.getElementById('subtitle').textContent = M.subtitle || '';
