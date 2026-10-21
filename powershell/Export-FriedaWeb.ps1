@@ -24,7 +24,7 @@
                             Excel verlinkt relativ darauf; Excel-Datei und Ordner daher
                             gemeinsam ablegen bzw. verschieben.
       <backup-name>.html    Archivansicht für den Browser (offline, ohne Installation, nur Lesen):
-                            Einstieg über Gräber oder Personen, Suche und Filter, Detailseiten mit
+                            Grabauswahl wie in FRIEDA, Grabinfo mit Belegung, Detailseiten mit
                             allen verknüpften Daten und Dokument-Links. Enthält alle Excel-Blätter
                             außer Verlauf und Ereignisprotokoll. Vorlage: Export-FriedaWeb.Viewer.html.
 

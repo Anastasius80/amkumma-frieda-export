@@ -13,6 +13,10 @@ Windows-Variante zum Archivieren einer **FriedaWeb**-Datenbank (Friedhofsverwalt
 
 Die Linux-Variante für Hohenems liegt unverändert in [`../linux`](../linux).
 
+**Musteransicht ansehen:** [`muster/FW_Muster.html`](muster/FW_Muster.html) zeigt die Archivansicht mit frei erfundenen Daten (herunterladen bzw. im ausgecheckten Ordner per Doppelklick in Edge öffnen) – Details in [Abschnitt 5.1](#51-musteransicht).
+
+[![Musteransicht der Grabseite (frei erfundene Daten)](muster/FW_Muster_Grab.png)](muster/FW_Muster.html)
+
 > **Datenschutz (DSGVO):** Alle Ergebnisse enthalten personenbezogene Daten (Verstorbene, Nutzungsberechtigte mit Adressen) und Bankverbindungen (IBAN, BIC, Mandatsnummern). Ablageort, Zugriffsrechte und Weitergabe entsprechend festlegen. Die HTML-Datei ist nicht geschützt; wer sie öffnen kann, sieht alle enthaltenen Daten.
 
 ---
@@ -101,7 +105,9 @@ Mit Windows PowerShell 5.1 entsprechend `powershell -ExecutionPolicy Bypass -Fil
 powershell/
 ├── Export-FriedaWeb.ps1            Exportskript
 ├── Export-FriedaWeb.Viewer.html    Vorlage der Archivansicht (wird beim Export mit Daten gefüllt)
+├── New-FriedaWebMuster.ps1         erzeugt die Musteransicht aus der Vorlage (frei erfundene Daten)
 ├── README.md
+├── muster/                         Musteransicht FW_Muster.html und Screenshot (versioniert, keine echten Daten)
 ├── backup/                         Eingang: hier die .bak-Datei und ggf. den Ordner "Dokumente" ablegen
 └── export/                         Ausgang: Excel, HTML, SQLite und Dokumentordner
 ```
@@ -211,7 +217,7 @@ Excel und HTML verlinken **relativ** auf diesen Ordner: Ergebnisdateien und Doku
 
 - **Grabauswahl wie in FRIEDA** (Startseite): Kennzeichen *aktuelle / abgelaufene / zurückgegebene / gesperrte Gräber*, Auswahl Friedhof → Abteilung → Reihe → Grab, Blättern mit `<<` `>>`. Darunter die Trefferliste mit Schnellsuche (Grabnummer oder Name der Verstorbenen) und „nur mit Dokumenten“. Eine eigene Personensuche gibt es nicht; Personen sind über das Grab erreichbar.
 - **Grabstatus** (Vorrang in dieser Reihenfolge): *gesperrt* = eine Sperrung des Grabs bzw. einer ihm heute zugeordneten Grabstelle gilt heute; *zurückgegeben* = Rückgabedatum erreicht; *abgelaufen* = Nutzungszeit vor heute beendet; sonst *aktuell*.
-- **Grabseite:** *Grabinfo* mit Friedhof, Abteilung, Reihe, Grab, Grabart, Grabstellen (z. B. „01–03 (3 Stellen)“), Status, Ersterwerb, erste Bestattung, Nutzungszeit bis, Ruhezeit bis (rot, wenn abgelaufen) und den aktuell Nutzungsberechtigten; Tabelle **Belegt / Frei / Möglich** für Erdbestattungen und Urnen; Tabelle **Verstorbene im Grab** (Nachname, Vorname, Geburts-, Sterbe- und Bestattungsdatum, Art mit E = Erd-/U = Urnenbestattung, Grabstelle, Position). Alle übrigen Angaben (alle Felder, Personen mit allen Bezügen, Berechtigungen, Nutzungsverlauf, Bescheide, Dokumente, weitere Fachtabellen) stehen **eingeklappt** unter „Weitere Angaben“.
+- **Grabseite:** Kopfzeile mit Grabnummer, Friedhof · Abteilung · Reihe und farbigem Status; darunter vier Spalten nebeneinander (bei schmalem Fenster 2×2): **Grab** (Grabart, Grabstellen, z. B. „01–03 (3 Stellen)“), **Belegung** (Belegt / Frei / Möglich für Erdbestattungen und Urnen), **Fristen und Berechtigte** (Ersterwerb, erste Bestattung, Nutzungszeit bis, Ruhezeit bis – rot, wenn abgelaufen –, aktuell Nutzungsberechtigte) und **Notiz** (Notizfelder des Grabs, z. B. Notiz, wichtige Notiz, Grabkontrolle); Tabelle **Verstorbene im Grab** (Nachname, Vorname, Geburts-, Sterbe- und Bestattungsdatum, Art mit E = Erd-/U = Urnenbestattung, Grabstelle, Position). Alle übrigen Angaben (alle Felder, Personen mit allen Bezügen, Berechtigungen, Nutzungsverlauf, Bescheide, Dokumente, weitere Fachtabellen) stehen **eingeklappt** unter „Weitere Angaben“.
 - **Belegung:** „Möglich“ = Erd- bzw. Urnenplätze laut Grabstellen-Zuordnung (Kennzeichen E1 … / U1 …), „Belegt“ = Bestattete mit laufender Ruhezeit, „Frei“ = Differenz – jeweils zum heutigen Datum berechnet. Ohne Platz-Kennzeichen im Datenmodell entfällt die Tabelle.
 - **Detailseiten** (Personen, Nachschlagewerte, weitere Tabellen): alle Felder und alle verknüpften Daten. Verweise und Zeilen sind anklickbar; „Zurück“ funktioniert wie gewohnt. Ja/Nein-Werte erscheinen in Tabellen als Häkchen.
 - **Nachschlagewerte als Link:** Klartexte wie Friedhof, Grabart, Bestatter oder Gebühr öffnen die Detailseite des Eintrags mit allen Feldern (z. B. Adresse und Telefon des Bestatters).
@@ -222,6 +228,20 @@ Excel und HTML verlinken **relativ** auf diesen Ordner: Ergebnisdateien und Doku
 - **Dokumente:** Klick auf den Dateinamen öffnet das Dokument; **„Pfad“** kopiert den vollständigen Dateipfad (z. B. zum Öffnen im Explorer).
 
 Nicht enthalten sind die reinen Protokolle (Verlauf, Ereignisprotokoll); diese stehen in Excel und SQLite.
+
+### 5.1 Musteransicht
+
+[`muster/FW_Muster.html`](muster/FW_Muster.html) ist die Archivansicht mit einem **frei erfundenen** Datenbestand: Musterfriedhof, Abteilung B2, Reihe 03, vier Gräber mit den Status aktuell, abgelaufen und zurückgegeben sowie erfundenen Verstorbenen, Nutzungsberechtigten und Notizen. Sie eignet sich zum Vorführen, für Schulungen und für Screenshots, weil sie **keine echten Personendaten** enthält.
+
+- **Öffnen:** im ausgecheckten Repository `powershell\muster\FW_Muster.html` per Doppelklick (Edge). Auf GitHub die Datei öffnen, *Download raw file* wählen und die heruntergeladene Datei öffnen – GitHub selbst zeigt HTML-Dateien nur als Quelltext an.
+- **Neu erzeugen** (z. B. nach Änderungen an `Export-FriedaWeb.Viewer.html`):
+
+  ```powershell
+  .\New-FriedaWebMuster.ps1              # nur die Musteransicht
+  .\New-FriedaWebMuster.ps1 -Screenshot  # zusätzlich muster\FW_Muster_Grab.png (benötigt Microsoft Edge)
+  ```
+
+- Für Screenshots aus einem **echten** Export gilt: Namen, Datumsangaben, Grabnummer, Abteilung/Reihe und Grabstellen vollständig abdecken (deckende Balken statt Weichzeichner) – sonst bleiben Personen über die Grablage bestimmbar. Einfacher ist, die Musteransicht zu verwenden.
 
 ---
 

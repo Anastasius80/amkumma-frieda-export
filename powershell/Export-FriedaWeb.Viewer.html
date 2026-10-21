@@ -16,11 +16,11 @@
 <style>
 :root {
   --bg: #f5f6f8; --panel: #ffffff; --text: #1d2330; --muted: #5d6675; --line: #dde1e7;
-  --accent: #1f5fa8; --accent-soft: #e6eef8; --hover: #f0f4fa; --warn: #8a5a00; --bad: #c62828; --ok: #2e7d32;
+  --accent: #1f5fa8; --accent-soft: #e6eef8; --hover: #f0f4fa; --warn: #8a5a00; --bad: #c62828; --ok: #2e7d32; --note-bg: #fffbea;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #15181d; --panel: #1e2229; --text: #e4e7ec; --muted: #9aa3b2; --line: #343a45;
-          --accent: #79aef0; --accent-soft: #24324a; --hover: #262c36; --warn: #e2b04a; --bad: #ff8a80; --ok: #81c784; }
+          --accent: #79aef0; --accent-soft: #24324a; --hover: #262c36; --warn: #e2b04a; --bad: #ff8a80; --ok: #81c784; --note-bg: #2a2718; }
 }
 * { box-sizing: border-box; }
 body { margin: 0; font: 15px/1.45 "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); }
@@ -79,11 +79,27 @@ details.sub > div { padding: 10px; }
 .statusbar { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-bottom: 12px; }
 .navbtns { display: flex; gap: 8px; }
 .navbtns button { flex: 1 1 auto; }
-.grabinfo { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 28px; margin-top: 14px; }
-.grabinfo h2 { grid-column: 1 / -1; margin: 0 0 8px; font-size: 16px; }
-.grabinfo .field { grid-template-columns: 46% 54%; }
-.occ { width: auto; min-width: 250px; font-size: 14px; }
-.occ th, .occ td { cursor: default; text-align: right; padding: 4px 10px; }
+.grabinfo { margin-top: 14px; padding: 0; overflow: hidden; }
+.gi-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 12px 18px; background: var(--accent-soft); border-bottom: 1px solid var(--line); }
+.gi-title { font-size: 20px; font-weight: 600; }
+.gi-sub { color: var(--muted); }
+.gi-cols { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(290px, 1fr) minmax(250px, 1fr) minmax(240px, 1.25fr); }
+.gi-cols > section { padding: 12px 18px 14px; border-left: 1px solid var(--line); min-width: 0; }
+.gi-cols > section:first-child { border-left: 0; }
+.gi-cols h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.gi-kv { display: grid; grid-template-columns: 118px 1fr; gap: 5px 12px; margin: 0; }
+.gi-kv dt { color: var(--muted); font-size: 13px; padding-top: 1px; }
+.gi-kv dd { margin: 0; overflow-wrap: anywhere; }
+.gi-note { background: var(--note-bg); }
+.gi-note .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.gi-note .text + h3 { margin-top: 12px; }
+.pill { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 13px; font-weight: 600; color: #fff; }
+.pill.aktuell { background: var(--ok); } .pill.abgelaufen { background: var(--warn); } .pill.zurueck { background: #6b7280; } .pill.gesperrt { background: var(--bad); }
+@media (max-width: 1100px) { .gi-cols { grid-template-columns: 1fr 1fr; } .gi-cols > section:nth-child(odd) { border-left: 0; } .gi-cols > section:nth-child(n+3) { border-top: 1px solid var(--line); } }
+@media (max-width: 640px) { .gi-cols { grid-template-columns: 1fr; } .gi-cols > section { border-left: 0; border-top: 1px solid var(--line); } }
+.occ { width: 100%; font-size: 14px; }
+.occ th, .occ td { cursor: default; text-align: right; padding: 4px 8px; position: static; white-space: nowrap; }
+.occ th:not(:first-child), .occ td:not(:first-child) { width: 1%; }
 .occ th:first-child, .occ td:first-child { text-align: left; }
 .occ tr.sum td { font-weight: 600; }
 .bad { color: var(--bad); font-weight: 600; }
@@ -625,9 +641,10 @@ const FW = /*__FW_DATA__*/null;
     const firstBurial = burials.map(b => dateKey(bval(b, 'Bestattungsdatum'))).filter(Boolean).sort()[0];
     const ruhe = dateKey(g('RuheEnde')), nutz = dateKey(g('NutzEnde'));
     return {
+      status, statusText: statusLabel(status) + (status === 'gesperrt' ? (lock ? ' bis ' + fmtDate(lock) : ' (ohne Freigabedatum)') : ''),
       lage: [...LEVELS.filter(([h]) => h in grabTable.idx).map(([h, label]) => [label, gtext(r, h)]), ['Grab', grabNr(r)],
-        ['Grabart', gtext(r, 'Grabart')], ['Grabstellen', stellenText(r)],
-        ['Status', statusLabel(status) + (status === 'gesperrt' ? (lock ? ' bis ' + fmtDate(lock) : ' (ohne Freigabedatum)') : '')]],
+        ['Grabart', gtext(r, 'Grabart')], ['Grabstellen', stellenText(r)]],
+      notes: grabNotes(r),
       fristen: [['Ersterwerb', dateOf('Ersterwerb')], ['Erste Bestattung', firstBurial ? fmtDate(firstBurial) : ''],
         ['Nutzungszeit bis', dateOf('NutzEnde'), nutz && nutz < TODAY], ['Ruhezeit bis', dateOf('RuheEnde'), ruhe && ruhe < TODAY],
         ['Rückgabe', dateOf('Rueckgabedatum')]],
@@ -635,6 +652,12 @@ const FW = /*__FW_DATA__*/null;
       holders: holdersOfGrab(id),
       burials
     };
+  }
+  // Notizen am Grab (Notiz, NotizWichtig, Grabkontrolle …); HTML-Zeilenumbrüche aus FriedaWeb als Zeilenumbruch
+  function grabNotes(r) {
+    return grabTable.cols.map((c, i) => [c, r[i]]).filter(([c, v]) => !c.x && /notiz|bemerk/i.test(c.h) && !isEmpty(v) && v !== false)
+      .map(([c, v]) => [c.h.replace(/^Notiz/, '').replace(/Bemerkungen?$/, '') || 'Notiz',
+        typeof v === 'boolean' ? 'Ja' : String(typeof v === 'object' ? fmt(v) : v).replace(/<br\s*\/?>/gi, '\n').trim()]);
   }
   const BURIAL_HEADS = ['Nachname', 'Vorname', 'Geburtsdatum', 'Sterbedatum', 'Bestattung', 'Art', 'Grabst.', 'Position'];
   function burialCells(b) {
@@ -647,18 +670,25 @@ const FW = /*__FW_DATA__*/null;
   function grabDetailView(r, id) {
     setNav('grab');
     const info = grabInfo(r, id);
-    const kv = list => list.filter(([, v]) => !isEmpty(v)).map(([k, v, bad]) =>
-      el('div', { class: 'field' }, el('div', { class: 'k' }, k), el('div', { class: 'v' + (bad ? ' bad' : '') }, v)));
+    const kv = list => el('dl', { class: 'gi-kv' }, list.filter(([, v]) => !isEmpty(v) && !(Array.isArray(v) && !v.length))
+      .flatMap(([k, v, bad]) => [el('dt', null, k), el('dd', bad ? { class: 'bad' } : null, v)]));
     const occ = info.occupancy && el('table', { class: 'occ' }, el('thead', null, el('tr', null, OCC_HEADS.map(h => el('th', null, h)))),
       el('tbody', null, info.occupancy.map(o => el('tr', o.h === 'Gesamt' ? { class: 'sum' } : null,
         el('td', null, o.h), el('td', { class: o.b ? 'bad' : '' }, o.b), el('td', { class: o.f ? 'ok' : '' }, o.f), el('td', null, o.m)))));
     const holderLinks = info.holders.flatMap((p, i) => [i ? '; ' : '', link(detailHref(p.t, p.r), personName(p.t, p.r))]);
+    const levels = info.lage.slice(0, -3);   // Friedhof, Abteilung, Reihe
     const head = el('div', { class: 'panel grabinfo' },
-      el('h2', null, 'Grabinfo – ' + grabLocation(r)),
-      el('div', null, kv(info.lage)),
-      occ && el('div', null, occ, el('p', { class: 'muted', style: 'font-size:12px' }, 'Belegt = Bestattete mit laufender Ruhezeit (Stand ' + fmtDate(TODAY) + ').')),
-      el('div', null, kv(info.fristen), info.holders.length > 0 &&
-        el('div', { class: 'field' }, el('div', { class: 'k' }, 'Nutzungsberechtigte'), el('div', { class: 'v' }, holderLinks))));
+      el('div', { class: 'gi-head' },
+        el('span', { class: 'gi-title' }, 'Grab ' + grabNr(r)),
+        el('span', { class: 'gi-sub' }, levels.map(l => l[1]).filter(Boolean).join(' · ')),
+        el('span', { class: 'pill ' + info.status }, info.statusText)),
+      el('div', { class: 'gi-cols' },
+        el('section', null, el('h3', null, 'Grab'), kv(info.lage.slice(-2))),
+        el('section', null, el('h3', null, 'Belegung'), occ || el('p', { class: 'muted' }, 'Keine Platzangaben.'),
+          occ && el('p', { class: 'muted', style: 'font-size:12px;margin:6px 0 0' }, 'Belegt = laufende Ruhezeit (Stand ' + fmtDate(TODAY) + ')')),
+        el('section', null, el('h3', null, 'Fristen und Berechtigte'), kv([...info.fristen, ['Nutzungsberechtigt', holderLinks]])),
+        el('section', { class: 'gi-note' }, info.notes.length ? info.notes.flatMap(([k, v]) => [el('h3', null, k), el('div', { class: 'text' }, v)])
+          : [el('h3', null, 'Notiz'), el('p', { class: 'muted', style: 'margin:0' }, 'Keine Notiz.')])));
 
     const sections = [];
     if (burialTable) {
@@ -872,9 +902,10 @@ const FW = /*__FW_DATA__*/null;
     const info = grabInfo(r, id);
     const kvs = list => list.filter(([, v]) => !isEmpty(v)).map(([k, v]) => printKv(k, v));
     const parts = [printHead('Grab ' + grabLocation(r), 'Grabblatt'),
-      el('div', { class: 'p-fields' }, kvs(info.lage), kvs(info.fristen),
+      el('div', { class: 'p-fields' }, kvs(info.lage), printKv('Status', info.statusText), kvs(info.fristen),
         info.holders.length > 0 && printKv('Nutzungsberechtigte', info.holders.map(p => personName(p.t, p.r)).join('; ')))];
     const section = (head, content) => parts.push(el('div', { class: 'p-sec' }, el('h3', null, head), content));
+    for (const [k, v] of info.notes) section(k === 'Notiz' ? 'Notiz' : 'Notiz – ' + k, el('div', { class: 'p-v' }, v));
     if (info.occupancy) section('Belegung (Stand ' + fmtDate(TODAY) + ')', el('table', { class: 'p-table', style: 'width:auto' },
       el('thead', null, el('tr', null, OCC_HEADS.map(h => el('th', null, h)))),
       el('tbody', null, info.occupancy.map(o => el('tr', null, el('td', null, o.h), el('td', null, o.b), el('td', null, o.f), el('td', null, o.m))))));
