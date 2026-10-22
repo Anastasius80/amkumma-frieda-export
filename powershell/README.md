@@ -7,6 +7,7 @@ Windows-Variante zum Archivieren einer **FriedaWeb**-Datenbank (Friedhofsverwalt
 | `<backup>.xlsx` | Fachliche Tabellen, weitere Fachtabellen und verwendete Nachschlagetabellen (`Ref_…`) als Blätter, IDs durch Klartext ersetzt, Dokument-Links | Arbeiten und Auswerten in Excel |
 | `<backup>.html` | Archivansicht mit Grabauswahl wie in FRIEDA, Grabinfo mit Belegung, Verstorbenen im Grab, Detailseiten, verlinkten Nachschlagewerten, Dokument-Links, Druckvorlage | Nachschlagen im Browser, ohne Installation |
 | `<backup>_Dokumente\` | Alle Dokumente als einzelne Dateien, Berichtsvorlagen im Unterordner `Berichtsvorlagen` | Ziel der Links in Excel und HTML |
+| `<backup>_Grabblaetter\` | *nur mit `-Grabblaetter`:* je Grab ein Grabblatt als PDF (Grabinfo, Belegung, Verstorbene, Notiz) | Stammdatenblatt je Grab zum Ablegen, Versenden, Drucken |
 | `<backup>.sqlite` | *nur mit `-KeepSqlite`:* 1:1-Kopie **aller** Tabellen inkl. IDs und Schlüssel | optional |
 
 **Aufbewahren:** Excel und HTML enthalten alle fachlich relevanten Daten. Die **Original-Sicherung (`.bak`) samt Dokumentordner** bleibt die vollständige Rohquelle (alle Tabellen, z. B. auch Benutzerrechte und Systemeinstellungen) und sollte archiviert werden.
@@ -105,11 +106,12 @@ Mit Windows PowerShell 5.1 entsprechend `powershell -ExecutionPolicy Bypass -Fil
 powershell/
 ├── Export-FriedaWeb.ps1            Exportskript
 ├── Export-FriedaWeb.Viewer.html    Vorlage der Archivansicht (wird beim Export mit Daten gefüllt)
+├── Export-FriedaWebGrabblaetter.ps1  Grabblätter als PDF (auch ohne neuen Export neu erstellbar)
 ├── New-FriedaWebMuster.ps1         erzeugt die Musteransicht aus der Vorlage (frei erfundene Daten)
 ├── README.md
-├── muster/                         Musteransicht FW_Muster.html und Screenshot (versioniert, keine echten Daten)
+├── muster/                         Musteransicht, Bild der Grabseite, Muster-Grabblatt (PDF + Vorschau) – versioniert, keine echten Daten
 ├── backup/                         Eingang: hier die .bak-Datei und ggf. den Ordner "Dokumente" ablegen
-└── export/                         Ausgang: Excel, HTML, SQLite und Dokumentordner
+└── export/                         Ausgang: Excel, HTML, SQLite, Dokumentordner und ggf. Grabblätter
 ```
 
 Der **Inhalt** von `backup/` und `export/` ist per `.gitignore` vom Repository ausgeschlossen und darf nie eingecheckt werden; versioniert sind dort nur die Platzhalter `.gitkeep`. Zusätzlich sind `*.bak`, `*.sqlite`, `*.xlsx`, `*.mdf`, `*.ldf`, `*.csv`, `*.zip` und `*.7z` überall ausgeschlossen.
@@ -146,6 +148,7 @@ Ohne Parameter muss in `backup/` **genau eine** `.bak`-Datei liegen. Die Ergebni
 | `-Sqlite3Path` | Suche über `PATH`/winget | Pfad zu `sqlite3.exe` |
 | `-LocalDbVersion` | neueste installierte | z. B. `15.0` oder `16.0` |
 | `-KeepSqlite` | aus | SQLite-Kopie aller Tabellen zusätzlich ausgeben (sonst nur intern für die Prüfungen) |
+| `-Grabblaetter` | aus | nach dem Export je Grab ein Grabblatt als PDF erzeugen (siehe [4.4](#44-grabblätter-pdf)); benötigt Microsoft Edge |
 
 Beispiel mit eigenen Pfaden:
 
@@ -209,6 +212,28 @@ Alle Dokumente landen **genau einmal** in **einem** Ordner `<backup>_Dokumente` 
 
 Excel und HTML verlinken **relativ** auf diesen Ordner: Ergebnisdateien und Dokumentordner daher immer gemeinsam ablegen bzw. verschieben.
 
+### 4.4 Grabblätter (PDF)
+
+Mit `-Grabblaetter` entsteht nach dem Export für **jedes Grab** ein Stammdatenblatt als PDF im Ordner `<backup>_Grabblaetter` neben dem Dokumentordner:
+
+- **Inhalt = Druck „Grabblatt drucken“** in der Archivansicht, ohne aufgeklappte Bereiche: Grabinfo, Status, Fristen, Nutzungsberechtigte, Notiz, Belegung und Verstorbene im Grab (A4 quer, meist eine Seite).
+- **Dateiname = Titel des Grabblatts**, z. B. `Friedhof … · Abteilung A1 · Reihe 01 · Grab 01-03.pdf`. Gibt es denselben Titel mehrfach (z. B. ein zurückgegebenes und ein neues Grab mit gleicher Nummer), folgt der Status, z. B. `… Grab 04-06 (zurückgegeben).pdf`.
+- **Stichtag:** Belegung und Ruhezeit-Kennzeichnung beziehen sich auf den Tag der Erzeugung (im Kopf „gedruckt …“).
+- **Neu erstellen ohne neuen Export**, z. B. nach Änderungen an der Druckvorlage in `Export-FriedaWeb.Viewer.html`:
+
+  ```powershell
+  .\Export-FriedaWebGrabblaetter.ps1                      # Archivansicht in .\export
+  .\Export-FriedaWebGrabblaetter.ps1 -HtmlPath D:\Export\FW_Beispiel_20260101.html
+  ```
+
+  Das Skript bringt die Archivansicht zuerst auf die aktuelle Vorlage (Daten unverändert), damit PDF und Druck identisch aussehen, und ersetzt danach den Ordner `<backup>_Grabblaetter` vollständig. Mit `-KeepTemplate` bleibt die Archivansicht unverändert.
+- **Technik:** Microsoft Edge läuft dabei einmalig unsichtbar im Hintergrund (eigenes temporäres Profil, Steuerung nur lokal über 127.0.0.1) und wird danach beendet; das normal geöffnete Edge ist nicht betroffen.
+- **Datenschutz:** Die PDFs enthalten dieselben personenbezogenen Daten wie Excel und HTML.
+
+**Muster eines Grabblatts** (frei erfundene Daten): [`muster/FW_Muster_Grabblatt.pdf`](muster/FW_Muster_Grabblatt.pdf)
+
+[![Muster-Grabblatt als PDF (frei erfundene Daten)](muster/FW_Muster_Grabblatt.png)](muster/FW_Muster_Grabblatt.pdf)
+
 ---
 
 ## 5. Archivansicht (HTML)
@@ -231,14 +256,14 @@ Nicht enthalten sind die reinen Protokolle (Verlauf, Ereignisprotokoll); diese s
 
 ### 5.1 Musteransicht
 
-[`muster/FW_Muster.html`](muster/FW_Muster.html) ist die Archivansicht mit einem **frei erfundenen** Datenbestand: Musterfriedhof, Abteilung B2, Reihe 03, vier Gräber mit den Status aktuell, abgelaufen und zurückgegeben sowie erfundenen Verstorbenen, Nutzungsberechtigten und Notizen. Sie eignet sich zum Vorführen, für Schulungen und für Screenshots, weil sie **keine echten Personendaten** enthält.
+[`muster/FW_Muster.html`](muster/FW_Muster.html) ist die Archivansicht mit einem **frei erfundenen** Datenbestand (dazu das Muster-Grabblatt [`muster/FW_Muster_Grabblatt.pdf`](muster/FW_Muster_Grabblatt.pdf), siehe [4.4](#44-grabblätter-pdf)): Musterfriedhof, Abteilung B2, Reihe 03, vier Gräber mit den Status aktuell, abgelaufen und zurückgegeben sowie erfundenen Verstorbenen, Nutzungsberechtigten und Notizen. Sie eignet sich zum Vorführen, für Schulungen und für Screenshots, weil sie **keine echten Personendaten** enthält.
 
 - **Öffnen:** im ausgecheckten Repository `powershell\muster\FW_Muster.html` per Doppelklick (Edge). Auf GitHub die Datei öffnen, *Download raw file* wählen und die heruntergeladene Datei öffnen – GitHub selbst zeigt HTML-Dateien nur als Quelltext an.
 - **Neu erzeugen** (z. B. nach Änderungen an `Export-FriedaWeb.Viewer.html`):
 
   ```powershell
   .\New-FriedaWebMuster.ps1              # nur die Musteransicht
-  .\New-FriedaWebMuster.ps1 -Screenshot  # zusätzlich muster\FW_Muster_Grab.png (benötigt Microsoft Edge)
+  .\New-FriedaWebMuster.ps1 -Screenshot  # zusätzlich Bild der Grabseite und Muster-Grabblatt (PDF + Vorschau); benötigt Microsoft Edge
   ```
 
 - Für Screenshots aus einem **echten** Export gilt: Namen, Datumsangaben, Grabnummer, Abteilung/Reihe und Grabstellen vollständig abdecken (deckende Balken statt Weichzeichner) – sonst bleiben Personen über die Grablage bestimmbar. Einfacher ist, die Musteransicht zu verwenden.

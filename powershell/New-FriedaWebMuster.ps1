@@ -20,7 +20,9 @@
     Ziel der Musteransicht. Standard: muster\FW_Muster.html neben diesem Skript.
 
 .PARAMETER Screenshot
-    Erzeugt zusätzlich muster\FW_Muster_Grab.png (Grabseite, 1600 × 1000) mit Microsoft Edge im Hintergrund.
+    Erzeugt zusätzlich mit Microsoft Edge im Hintergrund: muster\FW_Muster_Grab.png (Grabseite, 1600 × 1000),
+    muster\FW_Muster_Grabblatt.pdf (Grabblatt wie mit Export-FriedaWeb.ps1 -Grabblaetter) und dessen Vorschau
+    muster\FW_Muster_Grabblatt.png.
 
 .EXAMPLE
     .\New-FriedaWebMuster.ps1 -Screenshot
@@ -161,4 +163,60 @@ if ($Screenshot) {
         throw "Screenshot wurde nicht erstellt: $png"
     }
     Write-Host "Screenshot:    $png"
+
+    # Muster-Grabblatt (PDF wie mit -Grabblaetter) und Vorschaubild für die README
+    $grabblattScript = Join-Path $PSScriptRoot 'Export-FriedaWebGrabblaetter.ps1'
+    $sampleFolder = Join-Path ([IO.Path]::GetTempPath()) ('fwmuster_' + [guid]::NewGuid().ToString('N'))
+    $samplePdf = [IO.Path]::ChangeExtension($OutputPath, $null).TrimEnd('.') + '_Grabblatt.pdf'
+    $samplePng = [IO.Path]::ChangeExtension($samplePdf, '.png')
+    try {
+        [void](New-Item -ItemType Directory -Path $sampleFolder)
+        $sampleHtml = Join-Path $sampleFolder 'FW_Muster.html'
+        Copy-Item -LiteralPath $OutputPath -Destination $sampleHtml
+        & $grabblattScript -HtmlPath $sampleHtml -KeepTemplate | Out-Null
+        $pdf = Get-ChildItem -LiteralPath (Join-Path $sampleFolder 'FW_Muster_Grabblaetter') -Filter '*Grab 04-06.pdf' | Select-Object -First 1
+        if (-not $pdf) {
+            throw 'Muster-Grabblatt wurde nicht erstellt.'
+        }
+        Copy-Item -LiteralPath $pdf.FullName -Destination $samplePdf -Force
+        Write-Host "Grabblatt:     $samplePdf"
+        if (Test-Path -LiteralPath $samplePng) {
+            Remove-Item -LiteralPath $samplePng
+        }
+
+        # Vorschaubild mit dem in Windows enthaltenen PDF-Renderer (WinRT, nur Windows PowerShell 5.1)
+        $renderScript = Join-Path $sampleFolder 'render.ps1'
+        Set-Content -LiteralPath $renderScript -Encoding UTF8 -Value @'
+param([string]$Pdf, [string]$Png)
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$methods = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 }
+$asOperation = $methods | Where-Object { $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' } | Select-Object -First 1
+$asAction = $methods | Where-Object { $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncAction' } | Select-Object -First 1
+function Wait-Operation($Operation, [type]$Type) { $task = $asOperation.MakeGenericMethod($Type).Invoke($null, @($Operation)); $task.Wait(); $task.Result }
+[void][Windows.Storage.StorageFile, Windows.Storage, ContentType = WindowsRuntime]
+[void][Windows.Data.Pdf.PdfDocument, Windows.Data.Pdf, ContentType = WindowsRuntime]
+[void][Windows.Storage.Streams.InMemoryRandomAccessStream, Windows.Storage.Streams, ContentType = WindowsRuntime]
+$file = Wait-Operation ([Windows.Storage.StorageFile]::GetFileFromPathAsync($Pdf)) ([Windows.Storage.StorageFile])
+$document = Wait-Operation ([Windows.Data.Pdf.PdfDocument]::LoadFromFileAsync($file)) ([Windows.Data.Pdf.PdfDocument])
+$stream = New-Object Windows.Storage.Streams.InMemoryRandomAccessStream
+$options = New-Object Windows.Data.Pdf.PdfPageRenderOptions
+$options.DestinationWidth = 1600
+$task = $asAction.Invoke($null, @($document.GetPage(0).RenderToStreamAsync($stream, $options)))
+$task.Wait()
+$source = [System.IO.WindowsRuntimeStreamExtensions]::AsStreamForRead($stream.GetInputStreamAt(0))
+$target = [IO.File]::Create($Png)
+try { $source.CopyTo($target) } finally { $target.Dispose() }
+'@
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $renderScript -Pdf $samplePdf -Png $samplePng 2>&1 | Out-Null
+        if (Test-Path -LiteralPath $samplePng) {
+            Write-Host "Vorschau:      $samplePng"
+        }
+        else {
+            Write-Warning "Vorschaubild des Grabblatts konnte nicht erstellt werden: $samplePng"
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $sampleFolder -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }

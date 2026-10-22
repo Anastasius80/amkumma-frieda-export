@@ -451,7 +451,8 @@ const FW = /*__FW_DATA__*/null;
   // Reihenfolge wie in FRIEDA: Friedhof, Abteilung, Reihe, Grabnummer
   const LEVELS = [['Friedhof', 'Friedhof'], ['Block', 'Abteilung'], ['Reihe', 'Reihe']];
   const gtext = (r, h) => (h in grabTable.idx ? fmt(val(grabTable, r, h)) : '');
-  const grabNr = r => fmt(val(grabTable, r, 'GrabNr')) || grabName(r);
+  // Grabnummer; ohne Nummer die interne ID (eindeutig, auch als Dateiname der Grabblätter)
+  const grabNr = r => fmt(val(grabTable, r, 'GrabNr')) || 'ID ' + r[grabTable.idIdx];
   let gravesSorted = null;
   const sortedGraves = () => gravesSorted || (gravesSorted = grabTable.rows.slice().sort((a, b) =>
     LEVELS.reduce((d, [h]) => d || collator.compare(gtext(a, h), gtext(b, h)), 0) || collator.compare(grabNr(a), grabNr(b))));
@@ -901,7 +902,7 @@ const FW = /*__FW_DATA__*/null;
   function printGrab(r, id, prints) {
     const info = grabInfo(r, id);
     const kvs = list => list.filter(([, v]) => !isEmpty(v)).map(([k, v]) => printKv(k, v));
-    const parts = [printHead('Grab ' + grabLocation(r), 'Grabblatt'),
+    const parts = [printHead(grabLocation(r), 'Grabblatt'),
       el('div', { class: 'p-fields' }, kvs(info.lage), printKv('Status', info.statusText), kvs(info.fristen),
         info.holders.length > 0 && printKv('Nutzungsberechtigte', info.holders.map(p => personName(p.t, p.r)).join('; ')))];
     const section = (head, content) => parts.push(el('div', { class: 'p-sec' }, el('h3', null, head), content));
@@ -919,12 +920,27 @@ const FW = /*__FW_DATA__*/null;
     return [printHead(head, items.length.toLocaleString('de-AT') + ' Treffer' + (filterText ? ' · ' + filterText : '')),
       printTable(columns.map(c => c.h), items.map(it => columns.map(c => fmtCell(c.get(it)))))];
   }
+  // Schnittstelle für die Grabblatt-PDFs (Export-FriedaWebGrabblaetter.ps1): dieselbe Druckvorlage wie
+  // „Grabblatt drucken“, ohne aufgeklappte Bereiche. Der Titel ist zugleich der Dateiname des PDFs.
+  let pdfMode = false;
+  window.FW_PDF = grabTable ? {
+    list: () => sortedGraves().map(r => ({ id: String(r[grabTable.idIdx]), title: grabLocation(r), status: statusLabel(grabStatus(r)) })),
+    render: id => {
+      const r = grabTable.byId.get(String(id));
+      if (!r) return false;
+      pdfMode = true;
+      fill(printBox, printGrab(r, String(id), []));
+      document.body.classList.add('has-print');
+      return true;
+    }
+  } : null;
   window.addEventListener('beforeprint', () => {
+    if (pdfMode) return;
     const content = currentPrint ? currentPrint() : null;
     document.body.classList.toggle('has-print', !!content);
     fill(printBox, content);
   });
-  window.addEventListener('afterprint', () => { document.body.classList.remove('has-print'); fill(printBox); });
+  window.addEventListener('afterprint', () => { if (pdfMode) return; document.body.classList.remove('has-print'); fill(printBox); });
 
   function route() {
     currentPrint = null;

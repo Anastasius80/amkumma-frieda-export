@@ -133,9 +133,19 @@
     wird sie nur intern für die Prüfungen erzeugt und danach gelöscht; die vollständige Rohquelle
     ist dann die Original-Sicherung (.bak) samt Dokumentordner, die aufbewahrt werden sollte.
 
+.PARAMETER Grabblaetter
+    Nach dem Export für jedes Grab ein Grabblatt als PDF erzeugen (Ordner "<backup-name>_Grabblaetter"
+    neben dem Dokumentordner; Dateiname = Titel des Grabblatts). Gleiche Druckvorlage wie "Grabblatt
+    drucken" in der Archivansicht. Benötigt Microsoft Edge; siehe Export-FriedaWebGrabblaetter.ps1,
+    das die PDFs auch ohne neuen Export neu erstellt.
+
 .EXAMPLE
     .\Export-FriedaWeb.ps1
     Verwendet die .bak-Datei aus .\backup und schreibt nach .\export.
+
+.EXAMPLE
+    .\Export-FriedaWeb.ps1 -Grabblaetter
+    Wie oben, zusätzlich alle Grabblätter als PDF.
 
 .EXAMPLE
     .\Export-FriedaWeb.ps1 -BackupPath D:\Archiv\FW_Beispiel_20260101.bak -OutputPath D:\Export
@@ -164,7 +174,9 @@ param(
 
     [string]$LocalDbVersion,
 
-    [switch]$KeepSqlite
+    [switch]$KeepSqlite,
+
+    [switch]$Grabblaetter
 )
 
 Set-StrictMode -Version Latest
@@ -240,6 +252,8 @@ $DocumentTables = @{
 $DocumentDataColumn = 'Daten'
 # HTML-Archivansicht: alle Excel-Blätter außer den reinen Protokollen.
 $ViewerTemplateName = 'Export-FriedaWeb.Viewer.html'
+# Grabblätter als PDF (Schalter -Grabblaetter)
+$GrabblattScriptName = 'Export-FriedaWebGrabblaetter.ps1'
 $ViewerPlaceholder = '/*__FW_DATA__*/null'
 $ViewerExcludedTables = @('tbl_Verlauf', 'tbl_EventProtokoll')
 $DateTypes = @('datetime', 'datetime2', 'smalldatetime', 'date')
@@ -1398,6 +1412,16 @@ $viewerTemplate = Join-Path $PSScriptRoot $ViewerTemplateName
 if (-not (Test-Path -LiteralPath $viewerTemplate -PathType Leaf)) {
     throw "Vorlage für die HTML-Ansicht nicht gefunden: $viewerTemplate"
 }
+if ($Grabblaetter) {
+    # Vor dem langen Export prüfen, damit die PDFs nicht erst am Ende scheitern
+    if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $GrabblattScriptName) -PathType Leaf)) {
+        throw "Skript für die Grabblätter nicht gefunden: $(Join-Path $PSScriptRoot $GrabblattScriptName)"
+    }
+    if (-not (@("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") |
+                Where-Object { Test-Path -LiteralPath $_ })) {
+        throw 'Für -Grabblaetter wird Microsoft Edge benötigt, wurde aber nicht gefunden.'
+    }
+}
 
 if (-not $BackupPath) {
     $backupFolder = Join-Path $PSScriptRoot 'backup'
@@ -2391,6 +2415,11 @@ FROM sys.foreign_key_columns fkc
     }
     if ($dangling) {
         Write-Host "WARNUNG: $dangling Verweise ohne Nachschlagewert (als ?ID markiert)" -ForegroundColor Yellow
+    }
+
+    # --- Grabblätter als PDF (aus der fertigen Archivansicht, gleiche Druckvorlage) ---------------
+    if ($Grabblaetter) {
+        & (Join-Path $PSScriptRoot $GrabblattScriptName) -HtmlPath $htmlPath -KeepTemplate
     }
 }
 catch {
